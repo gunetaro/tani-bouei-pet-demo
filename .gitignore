@@ -36,9 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
-# reference images
-obake.png
-zikan.webp
+# reference images (root only, not public/)
+/obake.png
+/zikan.webp
 *.Zone.Identifier
 
 # typescript
