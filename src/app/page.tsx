@@ -80,6 +80,7 @@ export default function DemoPage() {
   const [dayCount, setDayCount] = useState(8);
   const [showPanel, setShowPanel] = useState(false);
   const [isHoliday, setIsHoliday] = useState(false);
+  const [oyasumiDone, setOyasumiDone] = useState(false);
   const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([...DEMO_DIARY]);
 
   const msgTimeout = useRef<NodeJS.Timeout>(null);
@@ -136,6 +137,14 @@ export default function DemoPage() {
       const words = PET_WORDS[pet.natsuki_level] || PET_WORDS[1];
       showMessage(words[careType] || words.happy);
 
+      if (careType === "oyasumi") {
+        setOyasumiDone(true);
+        setTimeout(
+          () => showMessage("あしたの じゅぎょうを かくにんしよう", 3500),
+          2800
+        );
+      }
+
       if (levelUp) {
         setTimeout(
           () => showMessage(`♪ なつきレベルが ${newLevel} になった！`, 3500),
@@ -164,6 +173,7 @@ export default function DemoPage() {
     };
     setDiaryEntries((prev) => [...prev, newEntry]);
     setTodayCare({ oyasumi: false, ohayou: false, osanpo: false });
+    setOyasumiDone(false);
     setDayCount((d) => d + 1);
 
     if (!isHoliday) {
@@ -217,6 +227,7 @@ export default function DemoPage() {
     setDayCount(8);
     setDiaryEntries([...DEMO_DIARY]);
     setIsHoliday(false);
+    setOyasumiDone(false);
     showMessage("リセットしたよ！");
   };
 
@@ -387,8 +398,12 @@ export default function DemoPage() {
       {/* ナビゲーション（本番と同じUI） */}
       <div className="w-full max-w-sm mt-6 flex gap-3">
         <button
-          onClick={() => setScreen("timetable")}
-          className="flex-1 py-3 rounded-2xl border-2 border-gray-200 bg-white font-mono text-sm text-gray-600 hover:border-gray-300 hover:shadow-sm transition active:translate-y-0.5"
+          onClick={() => { setScreen("timetable"); setOyasumiDone(false); }}
+          className={`flex-1 py-3 rounded-2xl border-2 font-mono text-sm transition active:translate-y-0.5 ${
+            oyasumiDone
+              ? "border-orange-300 bg-orange-50 text-orange-600 animate-pulse hover:border-orange-400"
+              : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:shadow-sm"
+          }`}
         >
           📅 じかんわり
         </button>
