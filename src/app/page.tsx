@@ -286,15 +286,15 @@ export default function DemoPage() {
         </div>
 
         {/* なつきハート */}
-        <div className="flex gap-1.5 mt-2">
+        <div className="flex gap-2 mt-2">
           {[1, 2, 3].map((i) => (
             <svg
               key={i}
-              viewBox="0 0 12 11"
+              viewBox="0 0 16 14"
               className="w-4 h-3.5"
             >
               <path
-                d="M3,1 L5,1 L5,0 L7,0 L7,1 L9,1 L9,0 L11,0 L11,1 L12,1 L12,5 L11,5 L11,6 L10,6 L10,7 L9,7 L9,8 L8,8 L8,9 L7,9 L7,10 L6,10 L6,11 L5,11 L5,10 L4,10 L4,9 L3,9 L3,8 L2,8 L2,7 L1,7 L1,6 L0,6 L0,1 L1,1 L1,0 L3,0 Z"
+                d="M8,3 C8,1 6.5,0 5,0 C3,0 1,1.5 1,4 C1,8 8,13 8,13 C8,13 15,8 15,4 C15,1.5 13,0 11,0 C9.5,0 8,1 8,3 Z"
                 fill={i <= pet.natsuki_level ? "#E24B4A" : "#D3D1C7"}
               />
             </svg>
