@@ -456,7 +456,7 @@ export default function DemoPage() {
                     : "border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100"
                 }`}
               >
-                {isHoliday ? "🔵 へいじつに もどす" : "🏖️ おやすみの ひに する"}
+                {isHoliday ? "🔵 へいじつに もどす" : "🏖️ きゅうじつに してみる"}
               </button>
               <button
                 onClick={skipLevel}
