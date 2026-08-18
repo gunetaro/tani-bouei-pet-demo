@@ -64,7 +64,7 @@ export default function Ghost({ status, mood, natsukiLevel, isHappy }: GhostProp
     return (
       <svg className="absolute inset-0 w-full h-full" viewBox="0 0 200 200">
         {/* 元の目と口を白で隠す */}
-        <rect x="75" y="88" width="60" height="50" fill="white" />
+        <ellipse cx="105" cy="110" rx="32" ry="28" fill="#FEFEFE" />
 
         {isHappy ? (
           <>
