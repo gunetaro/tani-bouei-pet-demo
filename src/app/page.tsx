@@ -1,69 +1,338 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useCallback, useRef } from "react";
+import Ghost from "@/components/Ghost";
+import {
+  PET_WORDS,
+  CARE_POINTS,
+  NATSUKI_THRESHOLDS,
+  getNatsukiLevel,
+  type PetState,
+  type PetStatus,
+} from "@/lib/pet-constants";
+
+const INITIAL_PET: PetState = {
+  name: "おばけちゃん",
+  natsuki_level: 1,
+  natsuki_points: 0,
+  mood: 50,
+  consecutive_days: 0,
+  status: "normal",
+};
+
+export default function DemoPage() {
+  const [pet, setPet] = useState<PetState>({ ...INITIAL_PET });
+  const [todayCare, setTodayCare] = useState<Record<string, boolean>>({
+    oyasumi: false,
+    ohayou: false,
+    osanpo: false,
+  });
+  const [message, setMessage] = useState("");
+  const [isHappy, setIsHappy] = useState(false);
+  const [dayCount, setDayCount] = useState(1);
+  const [showPanel, setShowPanel] = useState(false);
+
+  const msgTimeout = useRef<NodeJS.Timeout>(null);
+
+  const showMessage = useCallback((msg: string, duration = 2500) => {
+    setMessage(msg);
+    if (msgTimeout.current) clearTimeout(msgTimeout.current);
+    msgTimeout.current = setTimeout(() => setMessage(""), duration);
+  }, []);
+
+  const playHappy = useCallback(() => {
+    setIsHappy(true);
+    setTimeout(() => setIsHappy(false), 1200);
+  }, []);
+
+  // お世話（おやすみ・おはよう・おさんぽ共通）
+  const doCare = useCallback(
+    (careType: string) => {
+      if (pet.status === "runaway") {
+        showMessage("いえで しちゃった…");
+        return;
+      }
+      if (todayCare[careType]) {
+        showMessage("もうやったよ！");
+        return;
+      }
+
+      const points = CARE_POINTS[careType];
+      const newPoints = pet.natsuki_points + points;
+      const newLevel = getNatsukiLevel(newPoints);
+      const levelUp = newLevel > pet.natsuki_level;
+      const newMood = Math.min(100, pet.mood + 10);
+      const newConsecutive =
+        careType === "osanpo"
+          ? pet.consecutive_days + 1
+          : pet.consecutive_days;
+      const newStatus: PetStatus =
+        pet.status === "sad" || pet.status === "distant" ? "normal" : pet.status;
+
+      setPet({
+        ...pet,
+        natsuki_points: newPoints,
+        natsuki_level: newLevel,
+        mood: newMood,
+        consecutive_days: newConsecutive,
+        status: newStatus,
+      });
+      setTodayCare((prev) => ({ ...prev, [careType]: true }));
+      playHappy();
+
+      const words = PET_WORDS[pet.natsuki_level] || PET_WORDS[1];
+      showMessage(words[careType] || words.happy);
+
+      if (levelUp) {
+        setTimeout(
+          () => showMessage(`♪ なつきレベルが ${newLevel} になった！`, 3500),
+          1500
+        );
+      }
+    },
+    [pet, todayCare, showMessage, playHappy]
+  );
+
+  // --- デモ操作 ---
+  const advanceDay = () => {
+    setTodayCare({ oyasumi: false, ohayou: false, osanpo: false });
+    setDayCount((d) => d + 1);
+
+    // お世話しなかった日はmood低下
+    const caresDone = Object.values(todayCare).filter(Boolean).length;
+    if (caresDone === 0 && pet.status !== "runaway") {
+      const newMood = Math.max(0, pet.mood - 20);
+      const newStatus: PetStatus = newMood < 20 ? "sad" : pet.status;
+      setPet((p) => ({ ...p, mood: newMood, status: newStatus }));
+      showMessage("…きょうは だれも こなかった");
+    } else {
+      showMessage("あたらしい いちにちが はじまった！");
+    }
+  };
+
+  const triggerRunaway = () => {
+    setPet((p) => ({ ...p, status: "runaway", mood: 0 }));
+    showMessage("……いなくなっちゃった");
+  };
+
+  const triggerReturn = () => {
+    if (pet.status !== "runaway") return;
+    setPet((p) => ({ ...p, status: "sad", mood: 20 }));
+    const words = PET_WORDS[pet.natsuki_level] || PET_WORDS[1];
+    showMessage(words.reunion);
+    playHappy();
+  };
+
+  const skipLevel = () => {
+    if (pet.natsuki_level >= 3) {
+      showMessage("もう さいこうレベル！");
+      return;
+    }
+    const nextLevel = pet.natsuki_level + 1;
+    const nextPoints = NATSUKI_THRESHOLDS[nextLevel] || pet.natsuki_points;
+    setPet((p) => ({
+      ...p,
+      natsuki_level: nextLevel,
+      natsuki_points: nextPoints,
+    }));
+    showMessage(`♪ なつきレベルが ${nextLevel} になった！`, 3500);
+    playHappy();
+  };
+
+  const resetAll = () => {
+    setPet({ ...INITIAL_PET });
+    setTodayCare({ oyasumi: false, ohayou: false, osanpo: false });
+    setDayCount(1);
+    showMessage("リセットしたよ！");
+  };
+
+  // --- 表示計算 ---
+  const nextLevelPoints =
+    pet.natsuki_level < 3 ? NATSUKI_THRESHOLDS[pet.natsuki_level + 1] : null;
+  const currentThreshold = NATSUKI_THRESHOLDS[pet.natsuki_level] || 0;
+  const progressPercent = nextLevelPoints
+    ? Math.min(
+        100,
+        ((pet.natsuki_points - currentThreshold) /
+          (nextLevelPoints - currentThreshold)) *
+          100
+      )
+    : 100;
+  const moodEmoji = pet.mood >= 70 ? "◎" : pet.mood >= 40 ? "○" : "△";
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-[#F5F4EE] flex flex-col items-center px-4 py-6">
+      {/* ヘッダー */}
+      <div className="w-full max-w-sm flex justify-between items-center mb-4">
+        <span className="font-mono text-lg tracking-wider text-gray-600">
+          🥚 たんいぼうえいペット
+        </span>
+        <span className="text-xs text-orange-400 font-mono border border-orange-300 rounded-full px-2 py-0.5">
+          デモ版
+        </span>
+      </div>
+
+      {/* ペット画面 */}
+      <div className="w-full max-w-sm bg-[#C5CCA1] border-[6px] border-gray-500 rounded-2xl p-6 flex flex-col items-center relative shadow-lg">
+        <div className={isHappy ? "animate-bounce" : ""}>
+          <Ghost
+            status={pet.status}
+            mood={pet.mood}
+            natsukiLevel={pet.natsuki_level}
+            isHappy={isHappy}
+          />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* なつきハート */}
+        <div className="flex gap-1 mt-2">
+          {[1, 2, 3].map((i) => (
+            <svg
+              key={i}
+              viewBox="0 0 9 8"
+              className="w-4 h-3.5"
+              style={{ imageRendering: "pixelated" }}
+            >
+              <rect x="1" y="0" width="2" height="1" fill={i <= pet.natsuki_level ? "#E24B4A" : "#D3D1C7"} />
+              <rect x="5" y="0" width="2" height="1" fill={i <= pet.natsuki_level ? "#E24B4A" : "#D3D1C7"} />
+              <rect x="0" y="1" width="4" height="1" fill={i <= pet.natsuki_level ? "#E24B4A" : "#D3D1C7"} />
+              <rect x="4" y="1" width="4" height="1" fill={i <= pet.natsuki_level ? "#E24B4A" : "#D3D1C7"} />
+              <rect x="0" y="2" width="8" height="1" fill={i <= pet.natsuki_level ? "#F09595" : "#D3D1C7"} />
+              <rect x="1" y="3" width="6" height="1" fill={i <= pet.natsuki_level ? "#E24B4A" : "#D3D1C7"} />
+              <rect x="2" y="4" width="4" height="1" fill={i <= pet.natsuki_level ? "#E24B4A" : "#D3D1C7"} />
+              <rect x="3" y="5" width="2" height="1" fill={i <= pet.natsuki_level ? "#E24B4A" : "#D3D1C7"} />
+            </svg>
+          ))}
         </div>
-      </main>
+
+        <p className="text-xs text-gray-600 mt-1 font-mono">
+          きぶん: {moodEmoji}　れんぞく: {pet.consecutive_days}日　({dayCount}日目)
+        </p>
+
+        {/* ふきだし */}
+        {message && (
+          <div className="absolute bottom-3 left-14 bg-white border-2 border-gray-500 rounded-xl rounded-bl-none px-3 py-1.5 text-sm font-mono text-gray-700 animate-fade-in max-w-[200px] z-10">
+            {message}
+          </div>
+        )}
+      </div>
+
+      {/* お世話ボタン */}
+      {pet.status !== "runaway" && (
+        <div className="flex gap-3 mt-5">
+          {[
+            { type: "oyasumi", label: "🌙 おやすみ" },
+            { type: "ohayou", label: "☀️ おはよう" },
+            { type: "osanpo", label: "🚶 おさんぽ" },
+          ].map(({ type, label }) => (
+            <button
+              key={type}
+              onClick={() => doCare(type)}
+              disabled={todayCare[type]}
+              className={`
+                px-4 py-2.5 rounded-full border-2 font-mono text-sm transition-all duration-200
+                ${
+                  todayCare[type]
+                    ? "border-green-300 bg-green-50 text-green-600"
+                    : "border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm active:translate-y-0.5"
+                }
+                disabled:cursor-default
+              `}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 家出中の帰還ボタン */}
+      {pet.status === "runaway" && (
+        <button
+          onClick={triggerReturn}
+          className="mt-5 px-5 py-2.5 rounded-full border-2 border-dashed border-gray-400 bg-white text-gray-500 font-mono text-sm hover:border-gray-500 transition-all duration-200 active:translate-y-0.5"
+        >
+          おうちに もどす
+        </button>
+      )}
+
+      {/* なつきプログレスバー */}
+      <div className="w-full max-w-sm mt-6">
+        <div className="flex justify-between text-xs text-gray-400 font-mono mb-1">
+          <span>なつき Lv.{pet.natsuki_level}</span>
+          <span>
+            {nextLevelPoints
+              ? `${pet.natsuki_points} / ${nextLevelPoints} pt`
+              : "MAX ♪"}
+          </span>
+        </div>
+        <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${progressPercent}%`,
+              backgroundColor:
+                pet.natsuki_level >= 3
+                  ? "#7F77DD"
+                  : pet.natsuki_level >= 2
+                  ? "#5DCAA5"
+                  : "#85B7EB",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* デモ操作パネル */}
+      <div className="w-full max-w-sm mt-8">
+        <button
+          onClick={() => setShowPanel(!showPanel)}
+          className="w-full text-left font-mono text-xs text-gray-400 hover:text-gray-500 transition mb-2"
+        >
+          {showPanel ? "▼" : "▶"} デモ操作パネル
+        </button>
+
+        {showPanel && (
+          <div className="bg-white border-2 border-dashed border-gray-300 rounded-2xl p-4 flex flex-col gap-2">
+            <p className="font-mono text-xs text-gray-400 mb-1">
+              ※ デモ用の操作ボタンです（本番版にはありません）
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={advanceDay}
+                className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5"
+              >
+                📅 つぎの日へ
+              </button>
+              <button
+                onClick={skipLevel}
+                className="px-3 py-1.5 rounded-full border border-blue-300 bg-blue-50 text-blue-600 font-mono text-xs hover:bg-blue-100 transition active:translate-y-0.5"
+              >
+                ⬆ レベルスキップ
+              </button>
+              <button
+                onClick={triggerRunaway}
+                className="px-3 py-1.5 rounded-full border border-red-300 bg-red-50 text-red-600 font-mono text-xs hover:bg-red-100 transition active:translate-y-0.5"
+              >
+                🏃 いえでさせる
+              </button>
+              <button
+                onClick={resetAll}
+                className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5"
+              >
+                🔄 リセット
+              </button>
+            </div>
+
+            <div className="mt-2 font-mono text-xs text-gray-400 space-y-0.5">
+              <p>なつきpt: {pet.natsuki_points} / Lv.{pet.natsuki_level}</p>
+              <p>mood: {pet.mood} / status: {pet.status}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* フッター */}
+      <p className="mt-8 text-xs text-gray-300 font-mono text-center">
+        データはブラウザのメモリ上のみ（リロードで初期化）
+      </p>
     </div>
   );
 }
