@@ -36,6 +36,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# reference images
+obake.png
+zikan.webp
+*.Zone.Identifier
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
