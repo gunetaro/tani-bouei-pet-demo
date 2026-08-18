@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useRef } from "react";
 import Ghost from "@/components/Ghost";
+import Diary from "@/components/Diary";
+import Timetable from "@/components/Timetable";
 import {
   PET_WORDS,
   CARE_POINTS,
@@ -10,15 +12,58 @@ import {
   type PetState,
   type PetStatus,
 } from "@/lib/pet-constants";
+import { DEMO_DIARY, type DiaryEntry } from "@/lib/demo-data";
 
+// 1週間経過後の状態（7日 × 15pt = 105pt → Lv.2）
 const INITIAL_PET: PetState = {
   name: "おばけちゃん",
-  natsuki_level: 1,
-  natsuki_points: 0,
-  mood: 50,
-  consecutive_days: 0,
+  natsuki_level: 2,
+  natsuki_points: 105,
+  mood: 80,
+  consecutive_days: 5,
   status: "normal",
 };
+
+const DIARY_LV_TEMPLATES: Record<number, Record<string, string>> = {
+  1: {
+    full: "ﾋﾟ！ ﾋﾟ！\nだれか きた。\nﾋﾟﾔﾋﾟﾔ！\nいっしょに あるいた。\n……ﾋﾟｨ",
+    partial_ohayou: "ﾜｯ ﾜｯ\nきた！\nでも おさんぽは なかった。\n……ﾋﾟ",
+    partial_oyasumi: "……ﾋﾟｨ\nおやすみ だけ きた。\n……ﾋﾟ",
+    none: "……………\n…………\n………",
+  },
+  2: {
+    full: "おはよ！きょうも きた！\nおさんぽ たのし！\nいっぱい あるいた。\nおやすみ…あしたもね。",
+    partial_ohayou: "おはよ！\nきたけど おさんぽは なかった。\n…ちょっと さみしい。",
+    partial_oyasumi: "おやすみ だけ きた。\n…あしたは いっしょに いけるかな。",
+    none: "…こない。\nきょうも ひとり。\n…さみしい。",
+  },
+  3: {
+    full: "おはよう！きょうも いっしょに おさんぽしたよ！\nたのしかった！\nあしたも いっしょに いこうね。\nおやすみなさい！",
+    partial_ohayou: "おはよう！って いってくれた。\nでも おさんぽには いけなかった。\nあしたは いけるといいな。",
+    partial_oyasumi: "おやすみ って きてくれた。\nでも あさは こなかったな…\nあしたは おはよう いってほしいな。",
+    none: "…きょうは だれも こなかった。\nまどの そとを ずっと みてた。\n…あいたいな。",
+  },
+};
+
+const DAY_NAMES = [
+  "げつようび", "かようび", "すいようび", "もくようび", "きんようび",
+  "どようび", "にちようび",
+];
+
+function generateDiaryText(
+  level: number,
+  cares: Record<string, boolean>
+): string {
+  const templates = DIARY_LV_TEMPLATES[level] || DIARY_LV_TEMPLATES[1];
+  const done = Object.entries(cares).filter(([, v]) => v).map(([k]) => k);
+
+  if (done.length === 3) return templates.full;
+  if (done.includes("ohayou") && done.includes("osanpo")) return templates.full;
+  if (done.includes("ohayou")) return templates.partial_ohayou;
+  if (done.includes("oyasumi")) return templates.partial_oyasumi;
+  if (done.length > 0) return templates.partial_ohayou;
+  return templates.none;
+}
 
 export default function DemoPage() {
   const [pet, setPet] = useState<PetState>({ ...INITIAL_PET });
@@ -29,8 +74,12 @@ export default function DemoPage() {
   });
   const [message, setMessage] = useState("");
   const [isHappy, setIsHappy] = useState(false);
-  const [dayCount, setDayCount] = useState(1);
+  const [dayCount, setDayCount] = useState(8); // 1週間経過後
   const [showPanel, setShowPanel] = useState(false);
+  const [isHoliday, setIsHoliday] = useState(false);
+  const [showDiary, setShowDiary] = useState(false);
+  const [showTimetable, setShowTimetable] = useState(false);
+  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([...DEMO_DIARY]);
 
   const msgTimeout = useRef<NodeJS.Timeout>(null);
 
@@ -45,11 +94,15 @@ export default function DemoPage() {
     setTimeout(() => setIsHappy(false), 1200);
   }, []);
 
-  // お世話（おやすみ・おはよう・おさんぽ共通）
+  // お世話
   const doCare = useCallback(
     (careType: string) => {
       if (pet.status === "runaway") {
         showMessage("いえで しちゃった…");
+        return;
+      }
+      if (isHoliday) {
+        showMessage("きょうは おやすみだよ");
         return;
       }
       if (todayCare[careType]) {
@@ -90,24 +143,46 @@ export default function DemoPage() {
         );
       }
     },
-    [pet, todayCare, showMessage, playHappy]
+    [pet, todayCare, isHoliday, showMessage, playHappy]
   );
 
   // --- デモ操作 ---
   const advanceDay = () => {
+    // 今日の日記を生成
+    const dayIndex = (dayCount - 1) % 7;
+    const newEntry: DiaryEntry = {
+      day: dayCount,
+      dayLabel: DAY_NAMES[dayIndex],
+      cares: Object.entries(todayCare)
+        .filter(([, v]) => v)
+        .map(([k]) => k),
+      natsukiLevel: pet.natsuki_level,
+      text: isHoliday
+        ? (pet.natsuki_level >= 2
+            ? "おやすみ！\nきょうは のんびり すごしたよ。\nまどの そとを みてた。"
+            : "ﾋﾟ……\nのんびり。\n……ﾋﾟ")
+        : generateDiaryText(pet.natsuki_level, todayCare),
+    };
+    setDiaryEntries((prev) => [...prev, newEntry]);
+
     setTodayCare({ oyasumi: false, ohayou: false, osanpo: false });
     setDayCount((d) => d + 1);
 
-    // お世話しなかった日はmood低下
-    const caresDone = Object.values(todayCare).filter(Boolean).length;
-    if (caresDone === 0 && pet.status !== "runaway") {
-      const newMood = Math.max(0, pet.mood - 20);
-      const newStatus: PetStatus = newMood < 20 ? "sad" : pet.status;
-      setPet((p) => ({ ...p, mood: newMood, status: newStatus }));
-      showMessage("…きょうは だれも こなかった");
+    // お世話しなかった日はmood低下（休日は除く）
+    if (!isHoliday) {
+      const caresDone = Object.values(todayCare).filter(Boolean).length;
+      if (caresDone === 0 && pet.status !== "runaway") {
+        const newMood = Math.max(0, pet.mood - 20);
+        const newStatus: PetStatus = newMood < 20 ? "sad" : pet.status;
+        setPet((p) => ({ ...p, mood: newMood, status: newStatus }));
+        showMessage("…きょうは だれも こなかった");
+      } else {
+        showMessage("あたらしい いちにちが はじまった！");
+      }
     } else {
       showMessage("あたらしい いちにちが はじまった！");
     }
+    setIsHoliday(false);
   };
 
   const triggerRunaway = () => {
@@ -142,8 +217,20 @@ export default function DemoPage() {
   const resetAll = () => {
     setPet({ ...INITIAL_PET });
     setTodayCare({ oyasumi: false, ohayou: false, osanpo: false });
-    setDayCount(1);
+    setDayCount(8);
+    setDiaryEntries([...DEMO_DIARY]);
+    setIsHoliday(false);
     showMessage("リセットしたよ！");
+  };
+
+  const toggleHoliday = () => {
+    setIsHoliday((prev) => !prev);
+    if (!isHoliday) {
+      const words = PET_WORDS[pet.natsuki_level] || PET_WORDS[1];
+      showMessage(words.cancelled);
+    } else {
+      showMessage("へいじつに もどったよ");
+    }
   };
 
   // --- 表示計算 ---
@@ -165,11 +252,18 @@ export default function DemoPage() {
       {/* ヘッダー */}
       <div className="w-full max-w-sm flex justify-between items-center mb-4">
         <span className="font-mono text-lg tracking-wider text-gray-600">
-          🥚 たんいぼうえいペット
+          たんいぼうえいペット
         </span>
-        <span className="text-xs text-orange-400 font-mono border border-orange-300 rounded-full px-2 py-0.5">
-          デモ版
-        </span>
+        <div className="flex gap-2 items-center">
+          {isHoliday && (
+            <span className="text-xs text-blue-400 font-mono border border-blue-300 rounded-full px-2 py-0.5">
+              おやすみ
+            </span>
+          )}
+          <span className="text-xs text-orange-400 font-mono border border-orange-300 rounded-full px-2 py-0.5">
+            デモ版
+          </span>
+        </div>
       </div>
 
       {/* ペット画面 */}
@@ -217,7 +311,7 @@ export default function DemoPage() {
       </div>
 
       {/* お世話ボタン */}
-      {pet.status !== "runaway" && (
+      {pet.status !== "runaway" && !isHoliday && (
         <div className="flex gap-3 mt-5">
           {[
             { type: "oyasumi", label: "🌙 おやすみ" },
@@ -242,6 +336,13 @@ export default function DemoPage() {
             </button>
           ))}
         </div>
+      )}
+
+      {/* 休日メッセージ */}
+      {isHoliday && pet.status !== "runaway" && (
+        <p className="mt-5 font-mono text-sm text-gray-400">
+          きょうは おやすみ。のんびりしよう。
+        </p>
       )}
 
       {/* 家出中の帰還ボタン */}
@@ -290,10 +391,34 @@ export default function DemoPage() {
         </button>
 
         {showPanel && (
-          <div className="bg-white border-2 border-dashed border-gray-300 rounded-2xl p-4 flex flex-col gap-2">
-            <p className="font-mono text-xs text-gray-400 mb-1">
+          <div className="bg-white border-2 border-dashed border-gray-300 rounded-2xl p-4 flex flex-col gap-3">
+            <p className="font-mono text-xs text-gray-400">
               ※ デモ用の操作ボタンです（本番版にはありません）
             </p>
+
+            {/* 画面表示ボタン */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setShowTimetable(true)}
+                className="px-3 py-1.5 rounded-full border border-purple-300 bg-purple-50 text-purple-600 font-mono text-xs hover:bg-purple-100 transition active:translate-y-0.5"
+              >
+                📋 じかんわり
+              </button>
+              <button
+                onClick={() => {
+                  if (!isHoliday) {
+                    showMessage("にっきは おやすみの ひに みれるよ");
+                    return;
+                  }
+                  setShowDiary(true);
+                }}
+                className="px-3 py-1.5 rounded-full border border-yellow-300 bg-yellow-50 text-yellow-700 font-mono text-xs hover:bg-yellow-100 transition active:translate-y-0.5"
+              >
+                📖 にっき
+              </button>
+            </div>
+
+            {/* 日付・状態操作 */}
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={advanceDay}
@@ -302,11 +427,25 @@ export default function DemoPage() {
                 📅 つぎの日へ
               </button>
               <button
+                onClick={toggleHoliday}
+                className={`px-3 py-1.5 rounded-full border font-mono text-xs transition active:translate-y-0.5 ${
+                  isHoliday
+                    ? "border-blue-400 bg-blue-100 text-blue-600"
+                    : "border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100"
+                }`}
+              >
+                {isHoliday ? "🔵 へいじつに もどす" : "🏖️ おやすみに する"}
+              </button>
+              <button
                 onClick={skipLevel}
-                className="px-3 py-1.5 rounded-full border border-blue-300 bg-blue-50 text-blue-600 font-mono text-xs hover:bg-blue-100 transition active:translate-y-0.5"
+                className="px-3 py-1.5 rounded-full border border-green-300 bg-green-50 text-green-600 font-mono text-xs hover:bg-green-100 transition active:translate-y-0.5"
               >
                 ⬆ レベルスキップ
               </button>
+            </div>
+
+            {/* イベント操作 */}
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={triggerRunaway}
                 className="px-3 py-1.5 rounded-full border border-red-300 bg-red-50 text-red-600 font-mono text-xs hover:bg-red-100 transition active:translate-y-0.5"
@@ -321,9 +460,10 @@ export default function DemoPage() {
               </button>
             </div>
 
-            <div className="mt-2 font-mono text-xs text-gray-400 space-y-0.5">
+            <div className="mt-1 font-mono text-xs text-gray-400 space-y-0.5">
               <p>なつきpt: {pet.natsuki_points} / Lv.{pet.natsuki_level}</p>
               <p>mood: {pet.mood} / status: {pet.status}</p>
+              <p>にっき: {diaryEntries.length}けん</p>
             </div>
           </div>
         )}
@@ -333,6 +473,14 @@ export default function DemoPage() {
       <p className="mt-8 text-xs text-gray-300 font-mono text-center">
         データはブラウザのメモリ上のみ（リロードで初期化）
       </p>
+
+      {/* モーダル */}
+      {showDiary && (
+        <Diary entries={diaryEntries} onClose={() => setShowDiary(false)} />
+      )}
+      {showTimetable && (
+        <Timetable onClose={() => setShowTimetable(false)} />
+      )}
     </div>
   );
 }
