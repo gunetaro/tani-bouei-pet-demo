@@ -65,7 +65,10 @@ function generateDiaryText(
   return templates.none;
 }
 
+type Screen = "home" | "timetable" | "diary";
+
 export default function DemoPage() {
+  const [screen, setScreen] = useState<Screen>("home");
   const [pet, setPet] = useState<PetState>({ ...INITIAL_PET });
   const [todayCare, setTodayCare] = useState<Record<string, boolean>>({
     oyasumi: false,
@@ -74,11 +77,9 @@ export default function DemoPage() {
   });
   const [message, setMessage] = useState("");
   const [isHappy, setIsHappy] = useState(false);
-  const [dayCount, setDayCount] = useState(8); // 1週間経過後
+  const [dayCount, setDayCount] = useState(8);
   const [showPanel, setShowPanel] = useState(false);
   const [isHoliday, setIsHoliday] = useState(false);
-  const [showDiary, setShowDiary] = useState(false);
-  const [showTimetable, setShowTimetable] = useState(false);
   const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([...DEMO_DIARY]);
 
   const msgTimeout = useRef<NodeJS.Timeout>(null);
@@ -94,7 +95,6 @@ export default function DemoPage() {
     setTimeout(() => setIsHappy(false), 1200);
   }, []);
 
-  // お世話
   const doCare = useCallback(
     (careType: string) => {
       if (pet.status === "runaway") {
@@ -148,7 +148,6 @@ export default function DemoPage() {
 
   // --- デモ操作 ---
   const advanceDay = () => {
-    // 今日の日記を生成
     const dayIndex = (dayCount - 1) % 7;
     const newEntry: DiaryEntry = {
       day: dayCount,
@@ -164,11 +163,9 @@ export default function DemoPage() {
         : generateDiaryText(pet.natsuki_level, todayCare),
     };
     setDiaryEntries((prev) => [...prev, newEntry]);
-
     setTodayCare({ oyasumi: false, ohayou: false, osanpo: false });
     setDayCount((d) => d + 1);
 
-    // お世話しなかった日はmood低下（休日は除く）
     if (!isHoliday) {
       const caresDone = Object.values(todayCare).filter(Boolean).length;
       if (caresDone === 0 && pet.status !== "runaway") {
@@ -247,6 +244,17 @@ export default function DemoPage() {
     : 100;
   const moodEmoji = pet.mood >= 70 ? "◎" : pet.mood >= 40 ? "○" : "△";
 
+  // --- 時間割画面 ---
+  if (screen === "timetable") {
+    return <Timetable onClose={() => setScreen("home")} />;
+  }
+
+  // --- 日記画面 ---
+  if (screen === "diary") {
+    return <Diary entries={diaryEntries} onClose={() => setScreen("home")} />;
+  }
+
+  // --- ホーム画面 ---
   return (
     <div className="min-h-screen bg-[#F5F4EE] flex flex-col items-center px-4 py-6">
       {/* ヘッダー */}
@@ -381,6 +389,32 @@ export default function DemoPage() {
         </div>
       </div>
 
+      {/* ナビゲーション（本番と同じUI） */}
+      <div className="w-full max-w-sm mt-6 flex gap-3">
+        <button
+          onClick={() => setScreen("timetable")}
+          className="flex-1 py-3 rounded-2xl border-2 border-gray-200 bg-white font-mono text-sm text-gray-600 hover:border-gray-300 hover:shadow-sm transition active:translate-y-0.5"
+        >
+          📅 じかんわり
+        </button>
+        <button
+          onClick={() => {
+            if (!isHoliday) {
+              showMessage("にっきは おやすみの ひに みれるよ");
+              return;
+            }
+            setScreen("diary");
+          }}
+          className={`flex-1 py-3 rounded-2xl border-2 font-mono text-sm transition active:translate-y-0.5 ${
+            isHoliday
+              ? "border-yellow-200 bg-yellow-50 text-yellow-700 hover:border-yellow-300 hover:shadow-sm"
+              : "border-gray-200 bg-gray-50 text-gray-400"
+          }`}
+        >
+          📖 にっき {!isHoliday && "🔒"}
+        </button>
+      </div>
+
       {/* デモ操作パネル */}
       <div className="w-full max-w-sm mt-8">
         <button
@@ -396,29 +430,6 @@ export default function DemoPage() {
               ※ デモ用の操作ボタンです（本番版にはありません）
             </p>
 
-            {/* 画面表示ボタン */}
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setShowTimetable(true)}
-                className="px-3 py-1.5 rounded-full border border-purple-300 bg-purple-50 text-purple-600 font-mono text-xs hover:bg-purple-100 transition active:translate-y-0.5"
-              >
-                📋 じかんわり
-              </button>
-              <button
-                onClick={() => {
-                  if (!isHoliday) {
-                    showMessage("にっきは おやすみの ひに みれるよ");
-                    return;
-                  }
-                  setShowDiary(true);
-                }}
-                className="px-3 py-1.5 rounded-full border border-yellow-300 bg-yellow-50 text-yellow-700 font-mono text-xs hover:bg-yellow-100 transition active:translate-y-0.5"
-              >
-                📖 にっき
-              </button>
-            </div>
-
-            {/* 日付・状態操作 */}
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={advanceDay}
@@ -444,7 +455,6 @@ export default function DemoPage() {
               </button>
             </div>
 
-            {/* イベント操作 */}
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={triggerRunaway}
@@ -473,14 +483,6 @@ export default function DemoPage() {
       <p className="mt-8 text-xs text-gray-300 font-mono text-center">
         データはブラウザのメモリ上のみ（リロードで初期化）
       </p>
-
-      {/* モーダル */}
-      {showDiary && (
-        <Diary entries={diaryEntries} onClose={() => setShowDiary(false)} />
-      )}
-      {showTimetable && (
-        <Timetable onClose={() => setShowTimetable(false)} />
-      )}
     </div>
   );
 }
