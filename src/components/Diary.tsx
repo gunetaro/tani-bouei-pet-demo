@@ -59,18 +59,13 @@ export default function Diary({ entries, onClose }: DiaryProps) {
                 {[1, 2, 3].map((i) => (
                   <svg
                     key={i}
-                    viewBox="0 0 9 8"
+                    viewBox="0 0 12 11"
                     className="w-3 h-2.5"
-                    style={{ imageRendering: "pixelated" }}
                   >
-                    <rect x="1" y="0" width="2" height="1" fill={i <= entry.natsukiLevel ? "#E24B4A" : "#D3D1C7"} />
-                    <rect x="5" y="0" width="2" height="1" fill={i <= entry.natsukiLevel ? "#E24B4A" : "#D3D1C7"} />
-                    <rect x="0" y="1" width="4" height="1" fill={i <= entry.natsukiLevel ? "#E24B4A" : "#D3D1C7"} />
-                    <rect x="4" y="1" width="4" height="1" fill={i <= entry.natsukiLevel ? "#E24B4A" : "#D3D1C7"} />
-                    <rect x="0" y="2" width="8" height="1" fill={i <= entry.natsukiLevel ? "#F09595" : "#D3D1C7"} />
-                    <rect x="1" y="3" width="6" height="1" fill={i <= entry.natsukiLevel ? "#E24B4A" : "#D3D1C7"} />
-                    <rect x="2" y="4" width="4" height="1" fill={i <= entry.natsukiLevel ? "#E24B4A" : "#D3D1C7"} />
-                    <rect x="3" y="5" width="2" height="1" fill={i <= entry.natsukiLevel ? "#E24B4A" : "#D3D1C7"} />
+                    <path
+                      d="M3,1 L5,1 L5,0 L7,0 L7,1 L9,1 L9,0 L11,0 L11,1 L12,1 L12,5 L11,5 L11,6 L10,6 L10,7 L9,7 L9,8 L8,8 L8,9 L7,9 L7,10 L6,10 L6,11 L5,11 L5,10 L4,10 L4,9 L3,9 L3,8 L2,8 L2,7 L1,7 L1,6 L0,6 L0,1 L1,1 L1,0 L3,0 Z"
+                      fill={i <= entry.natsukiLevel ? "#E24B4A" : "#D3D1C7"}
+                    />
                   </svg>
                 ))}
                 <span className="font-mono text-xs text-gray-400 ml-1">
