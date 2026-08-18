@@ -287,6 +287,27 @@ export default function DemoPage() {
 
       {/* ペット画面 */}
       <div className="w-full max-w-sm bg-[#C5CCA1] border-[6px] border-gray-500 rounded-2xl p-6 flex flex-col items-center relative shadow-lg">
+        {/* なつき度（おばけの上） */}
+        <div className="flex items-center gap-2 mb-2">
+          <div className="flex gap-1.5">
+            {[1, 2, 3].map((i) => (
+              <svg
+                key={i}
+                viewBox="0 0 16 14"
+                className="w-4 h-3.5"
+              >
+                <path
+                  d="M8,3 C8,1 6.5,0 5,0 C3,0 1,1.5 1,4 C1,8 8,13 8,13 C8,13 15,8 15,4 C15,1.5 13,0 11,0 C9.5,0 8,1 8,3 Z"
+                  fill={i <= pet.natsuki_level ? "#E24B4A" : "#D3D1C7"}
+                />
+              </svg>
+            ))}
+          </div>
+          <span className="text-xs text-gray-600 font-mono">
+            きぶん: {moodEmoji}　{pet.consecutive_days}日れんぞく　({dayCount}日目)
+          </span>
+        </div>
+
         <div className={isHappy ? "animate-bounce" : ""}>
           <Ghost
             status={pet.status}
@@ -296,29 +317,9 @@ export default function DemoPage() {
           />
         </div>
 
-        {/* なつきハート */}
-        <div className="flex gap-2 mt-2">
-          {[1, 2, 3].map((i) => (
-            <svg
-              key={i}
-              viewBox="0 0 16 14"
-              className="w-4 h-3.5"
-            >
-              <path
-                d="M8,3 C8,1 6.5,0 5,0 C3,0 1,1.5 1,4 C1,8 8,13 8,13 C8,13 15,8 15,4 C15,1.5 13,0 11,0 C9.5,0 8,1 8,3 Z"
-                fill={i <= pet.natsuki_level ? "#E24B4A" : "#D3D1C7"}
-              />
-            </svg>
-          ))}
-        </div>
-
-        <p className="text-xs text-gray-600 mt-1 font-mono">
-          きぶん: {moodEmoji}　れんぞく: {pet.consecutive_days}日　({dayCount}日目)
-        </p>
-
-        {/* ふきだし */}
+        {/* ふきだし（下部中央） */}
         {message && (
-          <div className="absolute bottom-3 left-14 bg-white border-2 border-gray-500 rounded-xl rounded-bl-none px-3 py-1.5 text-sm font-mono text-gray-700 animate-fade-in max-w-[200px] z-10">
+          <div className="mt-2 bg-white border-2 border-gray-500 rounded-xl px-3 py-1.5 text-sm font-mono text-gray-700 animate-fade-in max-w-[240px] text-center">
             {message}
           </div>
         )}
@@ -328,9 +329,9 @@ export default function DemoPage() {
       {pet.status !== "runaway" && !isHoliday && (
         <div className="flex gap-3 mt-5">
           {[
-            { type: "oyasumi", label: "🌙 おやすみ" },
             { type: "ohayou", label: "☀️ おはよう" },
-            { type: "osanpo", label: "🚶 おさんぽ" },
+            { type: "osanpo", label: "🚶 とうこう" },
+            { type: "oyasumi", label: "🌙 おやすみ" },
           ].map(({ type, label }) => (
             <button
               key={type}
@@ -455,7 +456,7 @@ export default function DemoPage() {
                     : "border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100"
                 }`}
               >
-                {isHoliday ? "🔵 へいじつに もどす" : "🏖️ おやすみに する"}
+                {isHoliday ? "🔵 へいじつに もどす" : "🏖️ おやすみの ひに する"}
               </button>
               <button
                 onClick={skipLevel}
@@ -470,7 +471,7 @@ export default function DemoPage() {
                 onClick={triggerRunaway}
                 className="px-3 py-1.5 rounded-full border border-red-300 bg-red-50 text-red-600 font-mono text-xs hover:bg-red-100 transition active:translate-y-0.5"
               >
-                🏃 いえでさせる
+                🏃 もし いえでしちゃったら……
               </button>
               <button
                 onClick={resetAll}
