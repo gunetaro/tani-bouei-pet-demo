@@ -288,7 +288,10 @@ export default function DemoPage() {
       {/* ペット画面 */}
       <div className="w-full max-w-sm bg-[#C5CCA1] border-[6px] border-gray-500 rounded-2xl p-6 flex flex-col items-center relative shadow-lg">
         {/* なつき度（おばけの上） */}
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex flex-col items-center gap-1 mb-2">
+          <span className="text-xs text-gray-600 font-mono">
+            きぶん: {moodEmoji}　{pet.consecutive_days}日れんぞく　({dayCount}日目)
+          </span>
           <div className="flex gap-1.5">
             {[1, 2, 3].map((i) => (
               <svg
@@ -303,9 +306,6 @@ export default function DemoPage() {
               </svg>
             ))}
           </div>
-          <span className="text-xs text-gray-600 font-mono">
-            きぶん: {moodEmoji}　{pet.consecutive_days}日れんぞく　({dayCount}日目)
-          </span>
         </div>
 
         <div className={isHappy ? "animate-bounce" : ""}>
