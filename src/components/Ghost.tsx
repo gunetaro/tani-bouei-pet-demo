@@ -48,15 +48,6 @@ export default function Ghost({ status, mood, natsukiLevel, isHappy }: GhostProp
     // 元画像には通常顔（丸目+ω口）が描かれているので、
     // 通常・ごきげんの場合はオーバーレイ不要
     if (!isHappy && status !== "distant" && status !== "sad" && mood >= 30) {
-      // ごきげんの場合はほっぺだけ追加
-      if (mood > 70) {
-        return (
-          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 200 200">
-            <circle cx="72" cy="118" r="8" fill="#FFB8C6" opacity="0.4" />
-            <circle cx="138" cy="120" r="8" fill="#FFB8C6" opacity="0.4" />
-          </svg>
-        );
-      }
       return null; // 通常顔はそのまま
     }
 
@@ -73,9 +64,6 @@ export default function Ghost({ status, mood, natsukiLevel, isHappy }: GhostProp
             <path d="M 112 107 Q 118 97 124 107" stroke="#2C2C2A" strokeWidth="3" fill="none" strokeLinecap="round" />
             {/* ω口 */}
             <path d="M 95 120 Q 100 128 105 122 Q 110 128 115 120" stroke="#2C2C2A" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-            {/* ほっぺ */}
-            <circle cx="72" cy="118" r="9" fill="#FFB8C6" opacity="0.45" />
-            <circle cx="138" cy="120" r="9" fill="#FFB8C6" opacity="0.45" />
           </>
         ) : status === "distant" ? (
           <>
