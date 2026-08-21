@@ -73,7 +73,7 @@ export default function Timetable({ onClose }: TimetableProps) {
         <div className="space-y-3">
           {ALL_PERIODS.map(({ period, label, time }) => (
             <div key={period} className="flex items-center gap-3">
-              <span className="font-mono text-sm text-gray-500 w-28 shrink-0">
+              <span className="font-mono text-sm text-gray-500 w-32 shrink-0 whitespace-nowrap">
                 {label}（{time}）
               </span>
               <div className="flex-1 border-b border-gray-200 pb-1">
