@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import type { PetStatus } from "@/lib/pet-constants";
 
 interface Live2DGhostProps {
@@ -36,43 +36,32 @@ export default function Live2DGhost({
   isHappy,
 }: Live2DGhostProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const initRef = useRef(false);
   const isHappyRef = useRef(isHappy ?? false);
-  const tapHappyRef = useRef(false);
-  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const modelRef = useRef<any>(null);
-
-  // Keep ref in sync with props
   isHappyRef.current = isHappy ?? false;
 
-  const handleTap = useCallback(() => {
-    tapHappyRef.current = true;
-    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
-    tapTimerRef.current = setTimeout(() => {
-      tapHappyRef.current = false;
-    }, 2000);
-  }, []);
-
   useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let app: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let model: any = null;
     let ro: ResizeObserver | null = null;
+    let tapTimer: ReturnType<typeof setTimeout> | null = null;
+    let tapHappy = false;
+    let destroyed = false;
 
     (async () => {
       patchCubismCoreV6();
 
       const PIXI = await import("pixi.js");
+      if (destroyed) return;
+
       (window as unknown as Record<string, unknown>).PIXI = PIXI;
       const { Live2DModel } = await import(
         "pixi-live2d-display-lipsyncpatch/cubism4"
       );
+      if (destroyed) return;
 
       if (!canvasRef.current) return;
-
       const parent = canvasRef.current.parentElement!;
 
       app = new PIXI.Application({
@@ -83,10 +72,14 @@ export default function Live2DGhost({
         antialias: true,
       });
 
-      const model = await Live2DModel.from(
+      model = await Live2DModel.from(
         "/live2d/obake/obake_body.model3.json"
       );
-      modelRef.current = model;
+      if (destroyed) {
+        model.destroy({ children: true });
+        app.destroy(false, { children: true });
+        return;
+      }
 
       const origW = model.width;
       const origH = model.height;
@@ -94,7 +87,7 @@ export default function Live2DGhost({
       app.stage.addChild(model);
 
       const fitModel = () => {
-        if (!canvasRef.current || !model) return;
+        if (destroyed || !canvasRef.current) return;
         const p = canvasRef.current.parentElement!;
         const w = p.clientWidth;
         const h = p.clientHeight;
@@ -116,11 +109,16 @@ export default function Live2DGhost({
       ro.observe(parent);
 
       // Tap to trigger happy
-      model.on("pointerdown", () => handleTap());
+      const onTap = () => {
+        tapHappy = true;
+        if (tapTimer) clearTimeout(tapTimer);
+        tapTimer = setTimeout(() => { tapHappy = false; }, 2000);
+      };
+      model.on("pointerdown", onTap);
       model.interactive = true;
       model.cursor = "pointer";
 
-      // Expression update loop — lerp happy params each frame
+      // Expression lerp loop
       const currentValues: Record<string, number> = {};
       for (const id of HAPPY_PARAMS) currentValues[id] = 0;
 
@@ -129,10 +127,9 @@ export default function Live2DGhost({
         const coreModel: any = model.internalModel?.coreModel;
         if (!coreModel) return;
 
-        const target = (isHappyRef.current || tapHappyRef.current) ? 1 : 0;
+        const target = (isHappyRef.current || tapHappy) ? 1 : 0;
         for (const id of HAPPY_PARAMS) {
           currentValues[id] += (target - currentValues[id]) * LERP_SPEED;
-          // Snap to target when close enough
           if (Math.abs(currentValues[id] - target) < 0.01) {
             currentValues[id] = target;
           }
@@ -142,11 +139,20 @@ export default function Live2DGhost({
     })();
 
     return () => {
+      destroyed = true;
       ro?.disconnect();
-      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
-      app?.destroy(true);
+      if (tapTimer) clearTimeout(tapTimer);
+      if (app) {
+        app.ticker.stop();
+        if (model) {
+          model.off("pointerdown");
+          model.destroy({ children: true });
+        }
+        // false = don't remove canvas from DOM (React manages it)
+        app.destroy(false, { children: true, texture: true, baseTexture: true });
+      }
     };
-  }, [handleTap]);
+  }, []);
 
   return (
     <canvas
