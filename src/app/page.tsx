@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import Ghost from "@/components/Ghost";
 import Live2DGhost from "@/components/Live2DGhost";
 import Diary from "@/components/Diary";
 import Timetable from "@/components/Timetable";
@@ -312,22 +311,28 @@ export default function DemoPage() {
           </div>
         </div>
 
-        <div className="w-44 h-44">
-          {pet.status === "runaway" ? (
-            <Ghost
-              status={pet.status}
-              mood={pet.mood}
-              natsukiLevel={pet.natsuki_level}
-              isHappy={isHappy}
-            />
-          ) : (
-            <Live2DGhost
-              status={pet.status}
-              mood={pet.mood}
-              natsukiLevel={pet.natsuki_level}
-              isHappy={isHappy}
-            />
-          )}
+        <div className="w-44 h-44 relative">
+          <Live2DGhost
+            status={pet.status}
+            mood={pet.mood}
+            natsukiLevel={pet.natsuki_level}
+            isHappy={isHappy}
+          />
+          {/* 家出カバー */}
+          <div
+            className={`absolute inset-0 bg-[#C5CCA1] flex flex-col items-center justify-center transition-opacity duration-500 ${
+              pet.status === "runaway"
+                ? "opacity-100"
+                : "opacity-0 pointer-events-none"
+            }`}
+          >
+            <p className="font-mono text-sm text-gray-400">……いない</p>
+            <div className="flex gap-2 mt-2 opacity-30">
+              <div className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+              <div className="w-1 h-1 rounded-full bg-gray-300 mt-1" />
+              <div className="w-1 h-1 rounded-full bg-gray-200 mt-0.5" />
+            </div>
+          </div>
         </div>
 
         {/* ふきだし（下部中央） */}
