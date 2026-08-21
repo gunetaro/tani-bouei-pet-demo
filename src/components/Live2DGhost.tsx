@@ -130,17 +130,6 @@ export default function Live2DGhost({
         ro = new ResizeObserver(fitModel);
         ro.observe(parent);
 
-        // Debug: dump all parameter IDs and test setParameterValueById
-        const coreModelDbg: any = model.internalModel?.coreModel;
-        if (coreModelDbg) {
-          const ids = coreModelDbg._parameterIds;
-          console.log("[Live2D] parameterIds:", ids);
-          for (const id of HAPPY_PARAMS) {
-            const idx = coreModelDbg.getParameterIndex(id);
-            console.log(`[Live2D] ${id} → index=${idx}, inNotExist=${id in (coreModelDbg._notExistParameterId || {})}`);
-          }
-        }
-
         const onTap = () => {
           tapHappy = true;
           if (tapTimer) clearTimeout(tapTimer);
@@ -150,11 +139,14 @@ export default function Live2DGhost({
         model.interactive = true;
         model.cursor = "pointer";
 
+        // Smile expression via "beforeModelUpdate" hook
+        // This fires AFTER blink/focus/breath/physics/pose but BEFORE model.update()
+        // so our values are included in this frame's drawable computation.
         const currentValues: Record<string, number> = {};
         for (const id of HAPPY_PARAMS) currentValues[id] = 0;
         let frameCount = 0;
 
-        app.ticker.add(() => {
+        model.internalModel.on("beforeModelUpdate", () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const coreModel: any = model.internalModel?.coreModel;
           if (!coreModel) return;
@@ -168,15 +160,12 @@ export default function Live2DGhost({
             coreModel.setParameterValueById(id, currentValues[id]);
           }
 
-          // Log every 100 frames when happy
           frameCount++;
-          if (target > 0 && frameCount % 100 === 0) {
+          if (target > 0 && frameCount % 120 === 0) {
             for (const id of HAPPY_PARAMS) {
               const idx = coreModel.getParameterIndex(id);
               const val = coreModel.getParameterValueByIndex(idx);
-              const min = coreModel.getParameterMinimumValue(idx);
-              const max = coreModel.getParameterMaximumValue(idx);
-              console.log(`[Live2D] ${id}: set=${currentValues[id].toFixed(3)}, read=${val?.toFixed?.(3) ?? val}, range=[${min}, ${max}]`);
+              console.log(`[Live2D] ${id}: set=${currentValues[id].toFixed(3)}, read=${val?.toFixed?.(3) ?? val}`);
             }
           }
         });
@@ -193,6 +182,7 @@ export default function Live2DGhost({
         if (app) {
           app.ticker.stop();
           if (model) {
+            model.internalModel?.off("beforeModelUpdate");
             model.off("pointerdown");
             model.destroy({ children: true });
           }
