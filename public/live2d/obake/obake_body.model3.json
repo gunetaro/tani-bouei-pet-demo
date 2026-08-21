@@ -1,0 +1,18 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "obake_body.moc3",
+		"Textures": [
+			"obake_body.2048/texture_00.png"
+		],
+		"Physics": "obake_body.physics3.json",
+		"DisplayInfo": "obake_body.cdi3.json"
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": ["ParamEyeLOpen", "ParamEyeROpen"]
+		}
+	]
+}

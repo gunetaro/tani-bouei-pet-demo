@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import Ghost from "@/components/Ghost";
+import Live2DGhost from "@/components/Live2DGhost";
 import Diary from "@/components/Diary";
 import Timetable from "@/components/Timetable";
 import {
@@ -308,13 +309,22 @@ export default function DemoPage() {
           </div>
         </div>
 
-        <div className={isHappy ? "animate-bounce" : ""}>
-          <Ghost
-            status={pet.status}
-            mood={pet.mood}
-            natsukiLevel={pet.natsuki_level}
-            isHappy={isHappy}
-          />
+        <div className="w-44 h-44">
+          {pet.status === "runaway" ? (
+            <Ghost
+              status={pet.status}
+              mood={pet.mood}
+              natsukiLevel={pet.natsuki_level}
+              isHappy={isHappy}
+            />
+          ) : (
+            <Live2DGhost
+              status={pet.status}
+              mood={pet.mood}
+              natsukiLevel={pet.natsuki_level}
+              isHappy={isHappy}
+            />
+          )}
         </div>
 
         {/* ふきだし（下部中央） */}
