@@ -171,12 +171,13 @@ export default function Live2DGhost({
           // Log every 100 frames when happy
           frameCount++;
           if (target > 0 && frameCount % 100 === 0) {
-            const actual: Record<string, number> = {};
             for (const id of HAPPY_PARAMS) {
               const idx = coreModel.getParameterIndex(id);
-              actual[id] = coreModel._parameterValues?.[idx] ?? "N/A";
+              const val = coreModel.getParameterValueByIndex(idx);
+              const min = coreModel.getParameterMinimumValue(idx);
+              const max = coreModel.getParameterMaximumValue(idx);
+              console.log(`[Live2D] ${id}: set=${currentValues[id].toFixed(3)}, read=${val?.toFixed?.(3) ?? val}, range=[${min}, ${max}]`);
             }
-            console.log("[Live2D] smile tick:", { target, currentValues: { ...currentValues }, actual });
           }
         });
       } catch (e) {
