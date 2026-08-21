@@ -256,18 +256,21 @@ export default function DemoPage() {
     : 100;
   const moodEmoji = pet.mood >= 70 ? "◎" : pet.mood >= 40 ? "○" : "△";
 
-  // --- 時間割画面 ---
-  if (screen === "timetable") {
-    return <Timetable onClose={() => setScreen("home")} />;
-  }
-
-  // --- 日記画面 ---
-  if (screen === "diary") {
-    return <Diary entries={diaryEntries} onClose={() => setScreen("home")} />;
-  }
-
-  // --- ホーム画面 ---
+  // --- ホーム画面（常時マウント） ---
   return (
+    <>
+    {/* モーダル: 時間割 */}
+    {screen === "timetable" && (
+      <div className="fixed inset-0 z-50 bg-[#F5F4EE] overflow-y-auto">
+        <Timetable onClose={() => setScreen("home")} />
+      </div>
+    )}
+    {/* モーダル: 日記 */}
+    {screen === "diary" && (
+      <div className="fixed inset-0 z-50 bg-[#F5F4EE] overflow-y-auto">
+        <Diary entries={diaryEntries} onClose={() => setScreen("home")} />
+      </div>
+    )}
     <div className="min-h-screen bg-[#F5F4EE] flex flex-col items-center px-4 py-6">
       {/* ヘッダー */}
       <div className="w-full max-w-sm flex justify-between items-center mb-4">
@@ -505,5 +508,6 @@ export default function DemoPage() {
         データはブラウザのメモリ上のみ（リロードで初期化）
       </p>
     </div>
+    </>
   );
 }
