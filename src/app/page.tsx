@@ -492,6 +492,16 @@ export default function DemoPage() {
               >
                 🔄 リセット
               </button>
+              <button
+                onClick={() => setIsHappy((p) => !p)}
+                className={`px-3 py-1.5 rounded-full border font-mono text-xs transition active:translate-y-0.5 ${
+                  isHappy
+                    ? "border-pink-400 bg-pink-100 text-pink-600"
+                    : "border-pink-300 bg-pink-50 text-pink-600 hover:bg-pink-100"
+                }`}
+              >
+                {isHappy ? "😊 えがおON" : "😊 えがおOFF"}
+              </button>
             </div>
 
             <div className="mt-1 font-mono text-xs text-gray-400 space-y-0.5">
