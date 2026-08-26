@@ -13,19 +13,23 @@ interface Live2DGhostProps {
 const HAPPY_PARAMS = ["ParamMouthForm", "ParamEyeLSmile", "ParamEyeRSmile"];
 const LERP_SPEED = 0.08;
 
-// Jump animation tuning (exaggerated for demo – tweak constants to taste)
+// Jump animation tuning – gentle "puni" squash, not kagami-mochi
 const JUMP_INITIAL_VEL = -25;         // upward launch speed (negative = up)
 const JUMP_GRAVITY = 0.8;             // downward acceleration per frame
 const JUMP_BOUNCE_RESTITUTION = 0.45; // fraction of velocity kept per bounce
 const JUMP_BOUNCE_MIN_VEL = 4;        // stop bouncing below this (gives ~3 bounces)
 const JUMP_PREP_FRAMES = 5;           // pre-jump squat frames
-const JUMP_PREP_SQUASH = 0.65;        // scaleY multiplier during squat
-const JUMP_STRETCH_K = 0.014;         // |velocity| → extra stretch
-const JUMP_MAX_STRETCH = 1.4;         // max scaleY multiplier
-const JUMP_MIN_SQUASH = 0.6;          // min scaleY multiplier (landing squash)
+const JUMP_PREP_SQUASH = 0.92;        // scaleY during squat (subtle dip)
+const JUMP_SQUASH_K = 0.005;          // |velocity| → squash depth (sy = 1 - k*|vy|)
+const JUMP_STRETCH_K = 0.004;         // |velocity| → stretch (sy = 1 + k*|vy|)
+const JUMP_MAX_STRETCH = 1.12;        // max scaleY stretch
+const JUMP_MIN_SQUASH = 0.88;         // min scaleY squash (hard floor)
 const JUMP_RECOVER_SPEED = 0.18;      // lerp rate from squash back to 1
 const JUMP_ANGLE_IMPULSE = 20;        // ParamAngleZ degrees on each landing
 const JUMP_ANGLE_DECAY = 0.88;        // per-frame angle decay
+
+const FIT_RATIO = 0.8;          // model fills 80% of visible area → 20% animation margin
+const CANVAS_PAD = 2;           // renderer is 2× parent → room for model overflow + squash
 
 function patchCubismCoreV6() {
   const core = (window as any).Live2DCubismCore;
@@ -103,8 +107,8 @@ export default function Live2DGhost({
         app = new PIXI.Application({
           view: canvasRef.current,
           backgroundAlpha: 0,
-          width: parent.clientWidth,
-          height: parent.clientHeight,
+          width: Math.round(parent.clientWidth * CANVAS_PAD),
+          height: Math.round(parent.clientHeight * CANVAS_PAD),
           antialias: true,
         });
 
@@ -143,24 +147,31 @@ export default function Live2DGhost({
               : 0;
           model.y = baseY + jumpOffsetY + groundComp;
           if (!model.anchor) {
-            const p = canvasRef.current?.parentElement;
-            if (p) model.x = (p.clientWidth - origW * baseScale * jumpSX) / 2;
+            // Centre within the (larger) renderer
+            const rw = app.renderer.width;
+            model.x = (rw - origW * baseScale * jumpSX) / 2;
           }
         };
 
         const fitModel = () => {
           if (destroyed || !canvasRef.current) return;
           const p = canvasRef.current.parentElement!;
-          const w = p.clientWidth;
-          const h = p.clientHeight;
-          app.renderer.resize(w, h);
-          baseScale = Math.min(w / origW, h / origH);
+          // Logical = visible green-frame area
+          const logW = p.clientWidth;
+          const logH = p.clientHeight;
+          // Renderer is padded so squash/stretch doesn't hit the edge
+          const rw = Math.round(logW * CANVAS_PAD);
+          const rh = Math.round(logH * CANVAS_PAD);
+          app.renderer.resize(rw, rh);
+          // Scale is based on LOGICAL size → model's visual size stays constant
+          baseScale = Math.min(logW / origW, logH / origH) * FIT_RATIO;
           if (model.anchor) {
             model.anchor.set(0.5, 0.5);
-            model.x = w / 2;
-            baseY = h / 2;
+            model.x = rw / 2;
+            baseY = rh / 2;
           } else {
-            baseY = (h - origH * baseScale) / 2;
+            model.x = (rw - origW * baseScale) / 2;
+            baseY = (rh - origH * baseScale) / 2;
           }
           applyJumpTransform();
         };
@@ -186,31 +197,36 @@ export default function Live2DGhost({
             case "prep": {
               jumpPrepFrame++;
               const t = jumpPrepFrame / JUMP_PREP_FRAMES;
-              // Ease into squat
               jumpSY =
                 1 - (1 - JUMP_PREP_SQUASH) * Math.sin(t * Math.PI * 0.5);
               jumpSX = 1 / jumpSY;
               if (jumpPrepFrame >= JUMP_PREP_FRAMES) {
-                // Release! Snap to stretch on launch
                 jumpPhase = "air";
                 jumpVy = JUMP_INITIAL_VEL;
+                // Start air with sy=1 (no snap from prep squash to extreme stretch)
+                jumpSY = 1;
+                jumpSX = 1;
               }
               break;
             }
             case "air": {
               jumpVy += JUMP_GRAVITY;
               jumpOffsetY += jumpVy;
-              // Stretch proportional to speed
-              const s = 1 + Math.abs(jumpVy) * JUMP_STRETCH_K;
-              jumpSY = Math.min(s, JUMP_MAX_STRETCH);
+              // Stretch/squash proportional to speed, clamped to gentle range
+              if (jumpVy < 0) {
+                // Rising → slight vertical stretch
+                jumpSY = Math.min(1 + Math.abs(jumpVy) * JUMP_STRETCH_K, JUMP_MAX_STRETCH);
+              } else {
+                // Falling → slight vertical squash
+                jumpSY = Math.max(1 - jumpVy * JUMP_SQUASH_K, JUMP_MIN_SQUASH);
+              }
               jumpSX = 1 / jumpSY;
               // Ground hit
               if (jumpOffsetY >= 0 && jumpVy > 0) {
                 jumpOffsetY = 0;
-                // Landing squash
-                jumpSY = JUMP_MIN_SQUASH;
+                // Landing squash – velocity-proportional, clamped
+                jumpSY = Math.max(1 - jumpVy * JUMP_SQUASH_K, JUMP_MIN_SQUASH);
                 jumpSX = 1 / jumpSY;
-                // Angle impulse → physics chain (hair/hem sway)
                 jumpAngleZ +=
                   JUMP_ANGLE_IMPULSE * (Math.random() > 0.5 ? 1 : -1);
                 if (jumpVy < JUMP_BOUNCE_MIN_VEL) {
@@ -257,7 +273,6 @@ export default function Live2DGhost({
         // so our values are included in this frame's drawable computation.
         const currentValues: Record<string, number> = {};
         for (const id of HAPPY_PARAMS) currentValues[id] = 0;
-        let frameCount = 0;
 
         model.internalModel.on("beforeModelUpdate", () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -283,14 +298,6 @@ export default function Live2DGhost({
             );
           }
 
-          frameCount++;
-          if (target > 0 && frameCount % 120 === 0) {
-            for (const id of HAPPY_PARAMS) {
-              const idx = coreModel.getParameterIndex(id);
-              const val = coreModel.getParameterValueByIndex(idx);
-              console.log(`[Live2D] ${id}: set=${currentValues[id].toFixed(3)}, read=${val?.toFixed?.(3) ?? val}`);
-            }
-          }
         });
 
         // Drive jump animation each frame
@@ -323,8 +330,14 @@ export default function Live2DGhost({
   return (
     <canvas
       ref={canvasRef}
-      className="w-full h-full"
-      style={{ display: "block" }}
+      className="absolute"
+      style={{
+        display: "block",
+        width: `${CANVAS_PAD * 100}%`,
+        height: `${CANVAS_PAD * 100}%`,
+        left: `${(1 - CANVAS_PAD) * 50}%`,
+        top: `${(1 - CANVAS_PAD) * 50}%`,
+      }}
     />
   );
 }

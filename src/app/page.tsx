@@ -311,7 +311,7 @@ export default function DemoPage() {
           </div>
         </div>
 
-        <div className="w-44 h-44 relative">
+        <div className="w-44 h-44 relative overflow-hidden">
           <Live2DGhost
             status={pet.status}
             mood={pet.mood}
