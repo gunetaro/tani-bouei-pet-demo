@@ -13,6 +13,20 @@ interface Live2DGhostProps {
 const HAPPY_PARAMS = ["ParamMouthForm", "ParamEyeLSmile", "ParamEyeRSmile"];
 const LERP_SPEED = 0.08;
 
+// Jump animation tuning (exaggerated for demo – tweak constants to taste)
+const JUMP_INITIAL_VEL = -25;         // upward launch speed (negative = up)
+const JUMP_GRAVITY = 0.8;             // downward acceleration per frame
+const JUMP_BOUNCE_RESTITUTION = 0.45; // fraction of velocity kept per bounce
+const JUMP_BOUNCE_MIN_VEL = 4;        // stop bouncing below this (gives ~3 bounces)
+const JUMP_PREP_FRAMES = 5;           // pre-jump squat frames
+const JUMP_PREP_SQUASH = 0.65;        // scaleY multiplier during squat
+const JUMP_STRETCH_K = 0.014;         // |velocity| → extra stretch
+const JUMP_MAX_STRETCH = 1.4;         // max scaleY multiplier
+const JUMP_MIN_SQUASH = 0.6;          // min scaleY multiplier (landing squash)
+const JUMP_RECOVER_SPEED = 0.18;      // lerp rate from squash back to 1
+const JUMP_ANGLE_IMPULSE = 20;        // ParamAngleZ degrees on each landing
+const JUMP_ANGLE_DECAY = 0.88;        // per-frame angle decay
+
 function patchCubismCoreV6() {
   const core = (window as any).Live2DCubismCore;
   if (!core?.Model?.fromMoc) return;
@@ -108,32 +122,131 @@ export default function Live2DGhost({
 
         app.stage.addChild(model);
 
+        // --- Jump animation state ---
+        let baseY = 0;
+        let baseScale = 1;
+        let jumpPhase: "idle" | "prep" | "air" | "recover" = "idle";
+        let jumpVy = 0;
+        let jumpOffsetY = 0;
+        let jumpSY = 1; // scaleY multiplier (1 = normal)
+        let jumpSX = 1; // scaleX multiplier (volume-preserving: 1/jumpSY)
+        let jumpPrepFrame = 0;
+        let jumpAngleZ = 0;
+
+        const applyJumpTransform = () => {
+          model.scale.set(baseScale * jumpSX, baseScale * jumpSY);
+          // Keep bottom edge fixed when squashing on the "ground"
+          const anchorMul = model.anchor ? 0.5 : 1;
+          const groundComp =
+            jumpOffsetY === 0
+              ? origH * baseScale * (1 - jumpSY) * anchorMul
+              : 0;
+          model.y = baseY + jumpOffsetY + groundComp;
+          if (!model.anchor) {
+            const p = canvasRef.current?.parentElement;
+            if (p) model.x = (p.clientWidth - origW * baseScale * jumpSX) / 2;
+          }
+        };
+
         const fitModel = () => {
           if (destroyed || !canvasRef.current) return;
           const p = canvasRef.current.parentElement!;
           const w = p.clientWidth;
           const h = p.clientHeight;
           app.renderer.resize(w, h);
-          const scale = Math.min(w / origW, h / origH);
-          model.scale.set(scale);
+          baseScale = Math.min(w / origW, h / origH);
           if (model.anchor) {
             model.anchor.set(0.5, 0.5);
             model.x = w / 2;
-            model.y = h / 2;
+            baseY = h / 2;
           } else {
-            model.x = (w - origW * scale) / 2;
-            model.y = (h - origH * scale) / 2;
+            baseY = (h - origH * baseScale) / 2;
           }
+          applyJumpTransform();
         };
 
         fitModel();
         ro = new ResizeObserver(fitModel);
         ro.observe(parent);
 
+        const startJump = () => {
+          if (jumpPhase !== "idle") return;
+          jumpPhase = "prep";
+          jumpPrepFrame = 0;
+          jumpVy = 0;
+          jumpOffsetY = 0;
+          jumpSY = 1;
+          jumpSX = 1;
+        };
+
+        const tickJump = () => {
+          if (destroyed || jumpPhase === "idle") return;
+
+          switch (jumpPhase) {
+            case "prep": {
+              jumpPrepFrame++;
+              const t = jumpPrepFrame / JUMP_PREP_FRAMES;
+              // Ease into squat
+              jumpSY =
+                1 - (1 - JUMP_PREP_SQUASH) * Math.sin(t * Math.PI * 0.5);
+              jumpSX = 1 / jumpSY;
+              if (jumpPrepFrame >= JUMP_PREP_FRAMES) {
+                // Release! Snap to stretch on launch
+                jumpPhase = "air";
+                jumpVy = JUMP_INITIAL_VEL;
+              }
+              break;
+            }
+            case "air": {
+              jumpVy += JUMP_GRAVITY;
+              jumpOffsetY += jumpVy;
+              // Stretch proportional to speed
+              const s = 1 + Math.abs(jumpVy) * JUMP_STRETCH_K;
+              jumpSY = Math.min(s, JUMP_MAX_STRETCH);
+              jumpSX = 1 / jumpSY;
+              // Ground hit
+              if (jumpOffsetY >= 0 && jumpVy > 0) {
+                jumpOffsetY = 0;
+                // Landing squash
+                jumpSY = JUMP_MIN_SQUASH;
+                jumpSX = 1 / jumpSY;
+                // Angle impulse → physics chain (hair/hem sway)
+                jumpAngleZ +=
+                  JUMP_ANGLE_IMPULSE * (Math.random() > 0.5 ? 1 : -1);
+                if (jumpVy < JUMP_BOUNCE_MIN_VEL) {
+                  jumpPhase = "recover";
+                } else {
+                  jumpVy = -jumpVy * JUMP_BOUNCE_RESTITUTION;
+                }
+              }
+              break;
+            }
+            case "recover": {
+              jumpSY += (1 - jumpSY) * JUMP_RECOVER_SPEED;
+              jumpSX = 1 / jumpSY;
+              if (
+                Math.abs(jumpSY - 1) < 0.005 &&
+                Math.abs(jumpAngleZ) < 0.5
+              ) {
+                jumpSY = 1;
+                jumpSX = 1;
+                jumpOffsetY = 0;
+                jumpAngleZ = 0;
+                jumpPhase = "idle";
+              }
+              break;
+            }
+          }
+
+          jumpAngleZ *= JUMP_ANGLE_DECAY;
+          applyJumpTransform();
+        };
+
         const onTap = () => {
           tapHappy = true;
           if (tapTimer) clearTimeout(tapTimer);
           tapTimer = setTimeout(() => { tapHappy = false; }, 2000);
+          startJump();
         };
         model.on("pointerdown", onTap);
         model.interactive = true;
@@ -160,6 +273,16 @@ export default function Live2DGhost({
             coreModel.setParameterValueById(id, currentValues[id]);
           }
 
+          // Landing angle impulse → feeds into physics → hair/hem sway
+          if (Math.abs(jumpAngleZ) > 0.1) {
+            const idx = coreModel.getParameterIndex("ParamAngleZ");
+            const cur = coreModel.getParameterValueByIndex(idx);
+            coreModel.setParameterValueById(
+              "ParamAngleZ",
+              (cur ?? 0) + jumpAngleZ,
+            );
+          }
+
           frameCount++;
           if (target > 0 && frameCount % 120 === 0) {
             for (const id of HAPPY_PARAMS) {
@@ -169,6 +292,9 @@ export default function Live2DGhost({
             }
           }
         });
+
+        // Drive jump animation each frame
+        app.ticker.add(tickJump);
       } catch (e) {
         console.error("[Live2D] init failed:", e);
       }
