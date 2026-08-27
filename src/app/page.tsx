@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import Live2DGhost from "@/components/Live2DGhost";
+import Live2DGhost, { type GhostApi } from "@/components/Live2DGhost";
 import Diary from "@/components/Diary";
 import Timetable from "@/components/Timetable";
 import {
@@ -76,12 +76,12 @@ export default function DemoPage() {
     osanpo: false,
   });
   const [message, setMessage] = useState("");
-  const [isHappy, setIsHappy] = useState(false);
   const [dayCount, setDayCount] = useState(8);
   const [showPanel, setShowPanel] = useState(false);
   const [isHoliday, setIsHoliday] = useState(false);
   const [oyasumiDone, setOyasumiDone] = useState(false);
   const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([...DEMO_DIARY]);
+  const ghostApiRef = useRef<GhostApi | null>(null);
 
   const msgTimeout = useRef<NodeJS.Timeout>(null);
 
@@ -89,11 +89,6 @@ export default function DemoPage() {
     setMessage(msg);
     if (msgTimeout.current) clearTimeout(msgTimeout.current);
     msgTimeout.current = setTimeout(() => setMessage(""), duration);
-  }, []);
-
-  const playHappy = useCallback(() => {
-    setIsHappy(true);
-    setTimeout(() => setIsHappy(false), 1200);
   }, []);
 
   const doCare = useCallback(
@@ -132,7 +127,10 @@ export default function DemoPage() {
         status: newStatus,
       });
       setTodayCare((prev) => ({ ...prev, [careType]: true }));
-      playHappy();
+
+      if (careType === "ohayou") ghostApiRef.current?.triggerOhayou();
+      else if (careType === "osanpo") ghostApiRef.current?.triggerJump();
+      else if (careType === "oyasumi") ghostApiRef.current?.triggerOyasumi();
 
       const words = PET_WORDS[pet.natsuki_level] || PET_WORDS[1];
       showMessage(words[careType] || words.happy);
@@ -152,7 +150,7 @@ export default function DemoPage() {
         );
       }
     },
-    [pet, todayCare, isHoliday, showMessage, playHappy]
+    [pet, todayCare, isHoliday, showMessage]
   );
 
   // --- デモ操作 ---
@@ -202,7 +200,7 @@ export default function DemoPage() {
     setPet((p) => ({ ...p, status: "sad", mood: 20 }));
     const words = PET_WORDS[pet.natsuki_level] || PET_WORDS[1];
     showMessage(words.reunion);
-    playHappy();
+    ghostApiRef.current?.triggerOhayou();
   };
 
   const skipLevel = () => {
@@ -218,7 +216,7 @@ export default function DemoPage() {
       natsuki_points: nextPoints,
     }));
     showMessage(`♪ なつきレベルが ${nextLevel} になった！`, 3500);
-    playHappy();
+    ghostApiRef.current?.triggerOhayou();
   };
 
   const resetAll = () => {
@@ -316,7 +314,7 @@ export default function DemoPage() {
             status={pet.status}
             mood={pet.mood}
             natsukiLevel={pet.natsuki_level}
-            isHappy={isHappy}
+            onModelReady={(api) => { ghostApiRef.current = api; }}
           />
           {/* 家出カバー */}
           <div
@@ -496,16 +494,6 @@ export default function DemoPage() {
                 className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5"
               >
                 🔄 リセット
-              </button>
-              <button
-                onClick={() => setIsHappy((p) => !p)}
-                className={`px-3 py-1.5 rounded-full border font-mono text-xs transition active:translate-y-0.5 ${
-                  isHappy
-                    ? "border-pink-400 bg-pink-100 text-pink-600"
-                    : "border-pink-300 bg-pink-50 text-pink-600 hover:bg-pink-100"
-                }`}
-              >
-                {isHappy ? "😊 えがおON" : "😊 えがおOFF"}
               </button>
             </div>
 

@@ -3,40 +3,69 @@
 import { useEffect, useRef } from "react";
 import type { PetStatus } from "@/lib/pet-constants";
 
+export interface GhostApi {
+  triggerJump: () => void;
+  triggerOhayou: () => void;
+  triggerOyasumi: () => void;
+}
+
 interface Live2DGhostProps {
   status: PetStatus;
   mood: number;
   natsukiLevel: number;
-  isHappy?: boolean;
+  onModelReady?: (api: GhostApi) => void;
 }
 
 const HAPPY_PARAMS = ["ParamMouthForm", "ParamEyeLSmile", "ParamEyeRSmile"];
 const LERP_SPEED = 0.08;
 
 // Jump animation tuning – gentle "puni" squash, not kagami-mochi
-const JUMP_INITIAL_VEL = -25;         // upward launch speed (negative = up)
-const JUMP_GRAVITY = 0.8;             // downward acceleration per frame
-const JUMP_BOUNCE_RESTITUTION = 0.45; // fraction of velocity kept per bounce
-const JUMP_BOUNCE_MIN_VEL = 4;        // stop bouncing below this (gives ~3 bounces)
-const JUMP_PREP_FRAMES = 5;           // pre-jump squat frames
-const JUMP_PREP_SQUASH = 0.92;        // scaleY during squat (subtle dip)
-const JUMP_SQUASH_K = 0.005;          // |velocity| → squash depth (sy = 1 - k*|vy|)
-const JUMP_STRETCH_K = 0.004;         // |velocity| → stretch (sy = 1 + k*|vy|)
-const JUMP_MAX_STRETCH = 1.12;        // max scaleY stretch
-const JUMP_MIN_SQUASH = 0.88;         // min scaleY squash (hard floor)
-const JUMP_RECOVER_SPEED = 0.18;      // lerp rate from squash back to 1
-const JUMP_ANGLE_IMPULSE = 20;        // ParamAngleZ degrees on each landing
-const JUMP_ANGLE_DECAY = 0.88;        // per-frame angle decay
+const JUMP_INITIAL_VEL = -10;
+const JUMP_GRAVITY = 1.0;
+const JUMP_BOUNCE_RESTITUTION = 0.4;
+const JUMP_BOUNCE_MIN_VEL = 2;
+const JUMP_PREP_FRAMES = 5;
+const JUMP_PREP_SQUASH = 0.92;
+const JUMP_SQUASH_K = 0.005;
+const JUMP_STRETCH_K = 0.004;
+const JUMP_MAX_STRETCH = 1.12;
+const JUMP_MIN_SQUASH = 0.88;
+const JUMP_RECOVER_SPEED = 0.18;
+const JUMP_ANGLE_Z_IMPULSE = 3;
+const JUMP_ANGLE_X_IMPULSE = 1.5;
+const JUMP_ANGLE_DECAY = 0.92;
 
-const FIT_RATIO = 0.8;          // model fills 80% of visible area → 20% animation margin
-const CANVAS_PAD = 2;           // renderer is 2× parent → room for model overflow + squash
+// Ohayou animation (~1.5s at 60fps)
+const OHAYOU_DURATION = 90;
+const OHAYOU_SWAY_AMP = 12;
+const OHAYOU_SWAY_PERIOD = 30;
+const OHAYOU_SWAY_DECAY = 0.97;
+const OHAYOU_SMILE_MAX = 0.6;
+const OHAYOU_SMILE_IN = 15;
+const OHAYOU_SMILE_OUT = 25;
+
+// Oyasumi animation (~5s total)
+const OYASUMI_CLOSE_FRAMES = 60;
+const OYASUMI_HOLD_FRAMES = 180;
+const OYASUMI_OPEN_FRAMES = 60;
+const OYASUMI_TOTAL = OYASUMI_CLOSE_FRAMES + OYASUMI_HOLD_FRAMES + OYASUMI_OPEN_FRAMES;
+
+const FIT_RATIO = 0.8;
+const CANVAS_PAD = 2;
+
+function easeInOut(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
 
 function patchCubismCoreV6() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const core = (window as any).Live2DCubismCore;
   if (!core?.Model?.fromMoc) return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if ((core.Model as any).__patched) return;
 
   const origFromMoc = core.Model.fromMoc;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   core.Model.fromMoc = function (moc: any) {
     const model = origFromMoc.call(this, moc);
     if (model?.drawables && model.renderOrders && !model.drawables.renderOrders) {
@@ -44,17 +73,20 @@ function patchCubismCoreV6() {
     }
     return model;
   };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (core.Model as any).__patched = true;
 }
 
 function waitForCubismCore(timeout = 10000): Promise<void> {
   return new Promise((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((window as any).Live2DCubismCore) {
       resolve();
       return;
     }
     const start = Date.now();
     const check = setInterval(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((window as any).Live2DCubismCore) {
         clearInterval(check);
         resolve();
@@ -70,11 +102,9 @@ export default function Live2DGhost({
   status: _status,
   mood: _mood,
   natsukiLevel: _natsukiLevel,
-  isHappy,
+  onModelReady,
 }: Live2DGhostProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const isHappyRef = useRef(isHappy ?? false);
-  isHappyRef.current = isHappy ?? false;
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -82,8 +112,6 @@ export default function Live2DGhost({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let model: any = null;
     let ro: ResizeObserver | null = null;
-    let tapTimer: ReturnType<typeof setTimeout> | null = null;
-    let tapHappy = false;
     let destroyed = false;
 
     (async () => {
@@ -113,7 +141,7 @@ export default function Live2DGhost({
         });
 
         model = await Live2DModel.from(
-          "/live2d/obake/obake_body.model3.json"
+          "/live2d/obake/obake_body1.model3.json"
         );
         if (destroyed) {
           model.destroy({ children: true });
@@ -132,14 +160,29 @@ export default function Live2DGhost({
         let jumpPhase: "idle" | "prep" | "air" | "recover" = "idle";
         let jumpVy = 0;
         let jumpOffsetY = 0;
-        let jumpSY = 1; // scaleY multiplier (1 = normal)
-        let jumpSX = 1; // scaleX multiplier (volume-preserving: 1/jumpSY)
+        let jumpSY = 1;
+        let jumpSX = 1;
         let jumpPrepFrame = 0;
         let jumpAngleZ = 0;
+        let jumpAngleX = 0;
+
+        // --- Care animation state ---
+        let activeAnim: "none" | "ohayou" | "oyasumi" = "none";
+        let animFrame = 0;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let savedEyeBlink: any = null;
+
+        const cancelAnim = () => {
+          activeAnim = "none";
+          animFrame = 0;
+          if (savedEyeBlink && model.internalModel) {
+            model.internalModel.eyeBlink = savedEyeBlink;
+            savedEyeBlink = null;
+          }
+        };
 
         const applyJumpTransform = () => {
           model.scale.set(baseScale * jumpSX, baseScale * jumpSY);
-          // Keep bottom edge fixed when squashing on the "ground"
           const anchorMul = model.anchor ? 0.5 : 1;
           const groundComp =
             jumpOffsetY === 0
@@ -147,7 +190,6 @@ export default function Live2DGhost({
               : 0;
           model.y = baseY + jumpOffsetY + groundComp;
           if (!model.anchor) {
-            // Centre within the (larger) renderer
             const rw = app.renderer.width;
             model.x = (rw - origW * baseScale * jumpSX) / 2;
           }
@@ -156,14 +198,11 @@ export default function Live2DGhost({
         const fitModel = () => {
           if (destroyed || !canvasRef.current) return;
           const p = canvasRef.current.parentElement!;
-          // Logical = visible green-frame area
           const logW = p.clientWidth;
           const logH = p.clientHeight;
-          // Renderer is padded so squash/stretch doesn't hit the edge
           const rw = Math.round(logW * CANVAS_PAD);
           const rh = Math.round(logH * CANVAS_PAD);
           app.renderer.resize(rw, rh);
-          // Scale is based on LOGICAL size → model's visual size stays constant
           baseScale = Math.min(logW / origW, logH / origH) * FIT_RATIO;
           if (model.anchor) {
             model.anchor.set(0.5, 0.5);
@@ -203,7 +242,6 @@ export default function Live2DGhost({
               if (jumpPrepFrame >= JUMP_PREP_FRAMES) {
                 jumpPhase = "air";
                 jumpVy = JUMP_INITIAL_VEL;
-                // Start air with sy=1 (no snap from prep squash to extreme stretch)
                 jumpSY = 1;
                 jumpSX = 1;
               }
@@ -212,23 +250,19 @@ export default function Live2DGhost({
             case "air": {
               jumpVy += JUMP_GRAVITY;
               jumpOffsetY += jumpVy;
-              // Stretch/squash proportional to speed, clamped to gentle range
               if (jumpVy < 0) {
-                // Rising → slight vertical stretch
                 jumpSY = Math.min(1 + Math.abs(jumpVy) * JUMP_STRETCH_K, JUMP_MAX_STRETCH);
               } else {
-                // Falling → slight vertical squash
                 jumpSY = Math.max(1 - jumpVy * JUMP_SQUASH_K, JUMP_MIN_SQUASH);
               }
               jumpSX = 1 / jumpSY;
-              // Ground hit
               if (jumpOffsetY >= 0 && jumpVy > 0) {
                 jumpOffsetY = 0;
-                // Landing squash – velocity-proportional, clamped
                 jumpSY = Math.max(1 - jumpVy * JUMP_SQUASH_K, JUMP_MIN_SQUASH);
                 jumpSX = 1 / jumpSY;
-                jumpAngleZ +=
-                  JUMP_ANGLE_IMPULSE * (Math.random() > 0.5 ? 1 : -1);
+                const dir = Math.random() > 0.5 ? 1 : -1;
+                jumpAngleZ += jumpVy * JUMP_ANGLE_Z_IMPULSE * dir;
+                jumpAngleX += jumpVy * JUMP_ANGLE_X_IMPULSE * dir;
                 if (jumpVy < JUMP_BOUNCE_MIN_VEL) {
                   jumpPhase = "recover";
                 } else {
@@ -242,12 +276,14 @@ export default function Live2DGhost({
               jumpSX = 1 / jumpSY;
               if (
                 Math.abs(jumpSY - 1) < 0.005 &&
-                Math.abs(jumpAngleZ) < 0.5
+                Math.abs(jumpAngleZ) < 0.5 &&
+                Math.abs(jumpAngleX) < 0.5
               ) {
                 jumpSY = 1;
                 jumpSX = 1;
                 jumpOffsetY = 0;
                 jumpAngleZ = 0;
+                jumpAngleX = 0;
                 jumpPhase = "idle";
               }
               break;
@@ -255,22 +291,19 @@ export default function Live2DGhost({
           }
 
           jumpAngleZ *= JUMP_ANGLE_DECAY;
+          jumpAngleX *= JUMP_ANGLE_DECAY;
           applyJumpTransform();
         };
 
         const onTap = () => {
-          tapHappy = true;
-          if (tapTimer) clearTimeout(tapTimer);
-          tapTimer = setTimeout(() => { tapHappy = false; }, 2000);
+          cancelAnim();
           startJump();
         };
         model.on("pointerdown", onTap);
         model.interactive = true;
         model.cursor = "pointer";
 
-        // Smile expression via "beforeModelUpdate" hook
-        // This fires AFTER blink/focus/breath/physics/pose but BEFORE model.update()
-        // so our values are included in this frame's drawable computation.
+        // Parameter animation via "beforeModelUpdate" hook
         const currentValues: Record<string, number> = {};
         for (const id of HAPPY_PARAMS) currentValues[id] = 0;
 
@@ -279,28 +312,101 @@ export default function Live2DGhost({
           const coreModel: any = model.internalModel?.coreModel;
           if (!coreModel) return;
 
-          const target = (isHappyRef.current || tapHappy) ? 1 : 0;
+          if (activeAnim !== "none") animFrame++;
+
+          // --- Ohayou: additive sway on AngleZ ---
+          if (activeAnim === "ohayou") {
+            if (animFrame > OHAYOU_DURATION) {
+              cancelAnim();
+            } else {
+              const decay = Math.pow(OHAYOU_SWAY_DECAY, animFrame);
+              const sway =
+                OHAYOU_SWAY_AMP *
+                decay *
+                Math.sin((animFrame * Math.PI * 2) / OHAYOU_SWAY_PERIOD);
+              const idxZ = coreModel.getParameterIndex("ParamAngleZ");
+              const curZ = coreModel.getParameterValueByIndex(idxZ);
+              coreModel.setParameterValueById("ParamAngleZ", (curZ ?? 0) + sway);
+            }
+          }
+
+          // --- Smile ---
+          let smileGoal = 0;
+          if (activeAnim === "ohayou" && animFrame <= OHAYOU_DURATION) {
+            let s = OHAYOU_SMILE_MAX;
+            if (animFrame < OHAYOU_SMILE_IN) {
+              s = OHAYOU_SMILE_MAX * (animFrame / OHAYOU_SMILE_IN);
+            } else if (animFrame > OHAYOU_DURATION - OHAYOU_SMILE_OUT) {
+              s = OHAYOU_SMILE_MAX * ((OHAYOU_DURATION - animFrame) / OHAYOU_SMILE_OUT);
+            }
+            smileGoal = Math.max(smileGoal, s);
+          }
+
           for (const id of HAPPY_PARAMS) {
-            currentValues[id] += (target - currentValues[id]) * LERP_SPEED;
-            if (Math.abs(currentValues[id] - target) < 0.01) {
-              currentValues[id] = target;
+            currentValues[id] += (smileGoal - currentValues[id]) * LERP_SPEED;
+            if (Math.abs(currentValues[id] - smileGoal) < 0.01) {
+              currentValues[id] = smileGoal;
             }
             coreModel.setParameterValueById(id, currentValues[id]);
           }
 
-          // Landing angle impulse → feeds into physics → hair/hem sway
-          if (Math.abs(jumpAngleZ) > 0.1) {
-            const idx = coreModel.getParameterIndex("ParamAngleZ");
-            const cur = coreModel.getParameterValueByIndex(idx);
-            coreModel.setParameterValueById(
-              "ParamAngleZ",
-              (cur ?? 0) + jumpAngleZ,
-            );
+          // --- Oyasumi: smooth eye close/open ---
+          if (activeAnim === "oyasumi") {
+            let eyeVal = 1;
+            if (animFrame <= OYASUMI_CLOSE_FRAMES) {
+              eyeVal = 1 - easeInOut(animFrame / OYASUMI_CLOSE_FRAMES);
+            } else if (animFrame <= OYASUMI_CLOSE_FRAMES + OYASUMI_HOLD_FRAMES) {
+              eyeVal = 0;
+            } else if (animFrame <= OYASUMI_TOTAL) {
+              eyeVal = easeInOut(
+                (animFrame - OYASUMI_CLOSE_FRAMES - OYASUMI_HOLD_FRAMES) /
+                  OYASUMI_OPEN_FRAMES
+              );
+            } else {
+              cancelAnim();
+            }
+            if (activeAnim === "oyasumi") {
+              coreModel.setParameterValueById("ParamEyeLOpen", eyeVal);
+              coreModel.setParameterValueById("ParamEyeROpen", eyeVal);
+            }
           }
 
+          // --- Jump angle impulse → physics chain ---
+          if (Math.abs(jumpAngleZ) > 0.1) {
+            const idxZ = coreModel.getParameterIndex("ParamAngleZ");
+            const curZ = coreModel.getParameterValueByIndex(idxZ);
+            coreModel.setParameterValueById("ParamAngleZ", (curZ ?? 0) + jumpAngleZ);
+          }
+          if (Math.abs(jumpAngleX) > 0.1) {
+            const idxX = coreModel.getParameterIndex("ParamAngleX");
+            const curX = coreModel.getParameterValueByIndex(idxX);
+            coreModel.setParameterValueById("ParamAngleX", (curX ?? 0) + jumpAngleX);
+          }
         });
 
-        // Drive jump animation each frame
+        // Expose care animation API
+        onModelReady?.({
+          triggerJump: () => {
+            cancelAnim();
+            startJump();
+          },
+          triggerOhayou: () => {
+            cancelAnim();
+            activeAnim = "ohayou";
+            animFrame = 0;
+          },
+          triggerOyasumi: () => {
+            cancelAnim();
+            activeAnim = "oyasumi";
+            animFrame = 0;
+            const eb = model.internalModel?.eyeBlink;
+            if (eb) {
+              savedEyeBlink = eb;
+              model.internalModel.eyeBlink = null;
+            }
+          },
+        });
+
         app.ticker.add(tickJump);
       } catch (e) {
         console.error("[Live2D] init failed:", e);
@@ -310,7 +416,6 @@ export default function Live2DGhost({
     return () => {
       destroyed = true;
       ro?.disconnect();
-      if (tapTimer) clearTimeout(tapTimer);
       try {
         if (app) {
           app.ticker.stop();
