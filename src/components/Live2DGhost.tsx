@@ -112,6 +112,8 @@ export default function Live2DGhost({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let model: any = null;
     let ro: ResizeObserver | null = null;
+    let careSmile = false;
+    let careSmileTimer: ReturnType<typeof setTimeout> | null = null;
     let destroyed = false;
 
     (async () => {
@@ -332,6 +334,7 @@ export default function Live2DGhost({
 
           // --- Smile ---
           let smileGoal = 0;
+          if (careSmile) smileGoal = 1;
           if (activeAnim === "ohayou" && animFrame <= OHAYOU_DURATION) {
             let s = OHAYOU_SMILE_MAX;
             if (animFrame < OHAYOU_SMILE_IN) {
@@ -388,6 +391,9 @@ export default function Live2DGhost({
         onModelReady?.({
           triggerJump: () => {
             cancelAnim();
+            careSmile = true;
+            if (careSmileTimer) clearTimeout(careSmileTimer);
+            careSmileTimer = setTimeout(() => { careSmile = false; }, 2000);
             startJump();
           },
           triggerOhayou: () => {
@@ -416,6 +422,7 @@ export default function Live2DGhost({
     return () => {
       destroyed = true;
       ro?.disconnect();
+      if (careSmileTimer) clearTimeout(careSmileTimer);
       try {
         if (app) {
           app.ticker.stop();
