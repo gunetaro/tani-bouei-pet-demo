@@ -674,8 +674,8 @@ export default function DemoPage() {
       {/* モバイル用：デモ操作パネル（PCでは左カラムに表示） */}
       {SHOW_DEMO_PANEL && (
         <div className="w-full mt-5 lg:hidden flex flex-col gap-4">
-          {demoPanelA}
           {demoPanelDev}
+          {demoPanelA}
         </div>
       )}
 
