@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import Live2DGhost, { type GhostApi } from "@/components/Live2DGhost";
+import ObakePet, { type ObakePetHandle } from "@/components/ObakePet";
+import type { ObakeState, ObakeMotion } from "@/lib/obake/obake-engine";
 import Diary from "@/components/Diary";
 import Timetable from "@/components/Timetable";
 import {
@@ -9,10 +11,30 @@ import {
   CARE_POINTS,
   NATSUKI_THRESHOLDS,
   getNatsukiLevel,
+  OBAKE_PRESET_LARGE,
   type PetState,
   type PetStatus,
 } from "@/lib/pet-constants";
 import { DEMO_DIARY, type DiaryEntry } from "@/lib/demo-data";
+
+/** true → 新しいおばけ Live2D 部品、false → 旧 pixi-live2d-display */
+const USE_NEW_OBAKE = true;
+/** true → デモ操作パネルを表示 */
+const SHOW_DEMO_PANEL = true;
+
+const OBAKE_STATE_LABELS: Record<string, string> = {
+  idle: "ふつう",
+  sleep: "ねてる",
+  sulk: "すねてる",
+  gone: "いえでちゅう",
+};
+
+function petStatusToObakeState(status: PetStatus, oyasumiDone: boolean): ObakeState {
+  if (status === "runaway") return "gone";
+  if (status === "sad" || status === "distant") return "sulk";
+  if (oyasumiDone) return "sleep";
+  return "idle";
+}
 
 // 1週間経過後の状態（7日 × 15pt = 105pt → Lv.2）
 const INITIAL_PET: PetState = {
@@ -77,11 +99,49 @@ export default function DemoPage() {
   });
   const [message, setMessage] = useState("");
   const [dayCount, setDayCount] = useState(8);
-  const [showPanel, setShowPanel] = useState(false);
   const [isHoliday, setIsHoliday] = useState(false);
+  const [obakeDisplayState, setObakeDisplayState] = useState("ふつう");
+  const [demoAnimating, setDemoAnimating] = useState(false);
   const [oyasumiDone, setOyasumiDone] = useState(false);
   const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([...DEMO_DIARY]);
   const ghostApiRef = useRef<GhostApi | null>(null);
+  const obakeRef = useRef<ObakePetHandle>(null);
+  const [mountObakeState] = useState<ObakeState>(() => {
+    if (pet.status === "sad" || pet.status === "distant") return "idle";
+    if (pet.status === "runaway") return "sulk";
+    return petStatusToObakeState(pet.status, oyasumiDone);
+  });
+  const [sulkAnimShown, setSulkAnimShown] = useState(false);
+  const [iedeAnimShown, setIedeAnimShown] = useState(false);
+
+  // デモパネル B: モーション
+  const [playingMotion, setPlayingMotion] = useState<ObakeMotion | null>(null);
+
+  // デモパネル C: パラメータ
+  const [showParams, setShowParams] = useState(false);
+  const [heldIds, setHeldIds] = useState<Set<string>>(new Set());
+  const [paramValues, setParamValues] = useState<Record<string, number>>({});
+
+  // パラメータの PARAM_INFO / MOTION_INFO（動的 import で取得）
+  const [PARAM_INFO, setParamInfo] = useState<{ id: string; label: string; note?: string; min: number; max: number; def: number; group: string }[]>([]);
+  const [MOTION_INFO, setMotionInfo] = useState<{ name: ObakeMotion; label: string }[]>([]);
+
+  useEffect(() => {
+    import("@/lib/obake/obake-engine").then(m => {
+      setParamInfo(m.PARAM_INFO);
+      setMotionInfo(m.MOTION_INFO);
+    });
+  }, []);
+
+  // パラメータ値のポーリング（開いている間だけ）
+  useEffect(() => {
+    if (!showParams) return;
+    const id = setInterval(() => {
+      const vals = obakeRef.current?.getValues();
+      if (vals) setParamValues(vals);
+    }, 100);
+    return () => clearInterval(id);
+  }, [showParams]);
 
   const msgTimeout = useRef<NodeJS.Timeout>(null);
 
@@ -128,12 +188,25 @@ export default function DemoPage() {
       });
       setTodayCare((prev) => ({ ...prev, [careType]: true }));
 
-      if (careType === "ohayou") ghostApiRef.current?.triggerOhayou();
-      else if (careType === "osanpo") ghostApiRef.current?.triggerJump();
-      else if (careType === "oyasumi") ghostApiRef.current?.triggerOyasumi();
+      if (USE_NEW_OBAKE) {
+        if (careType === "ohayou") {
+          obakeRef.current?.ohayo();
+          if (pet.status === "sad" || pet.status === "distant") {
+            setSulkAnimShown(false);
+            setIedeAnimShown(false);
+          }
+        } else if (careType === "osanpo") obakeRef.current?.touko();
+        else if (careType === "oyasumi") obakeRef.current?.oyasumi();
+      } else {
+        if (careType === "ohayou") ghostApiRef.current?.triggerOhayou();
+        else if (careType === "osanpo") ghostApiRef.current?.triggerJump();
+        else if (careType === "oyasumi") ghostApiRef.current?.triggerOyasumi();
+      }
 
-      const words = PET_WORDS[pet.natsuki_level] || PET_WORDS[1];
-      showMessage(words[careType] || words.happy);
+      if (!USE_NEW_OBAKE) {
+        const words = PET_WORDS[pet.natsuki_level] || PET_WORDS[1];
+        showMessage(words[careType] || words.happy);
+      }
 
       if (careType === "oyasumi") {
         setOyasumiDone(true);
@@ -181,26 +254,56 @@ export default function DemoPage() {
         const newStatus: PetStatus = newMood < 20 ? "sad" : pet.status;
         setPet((p) => ({ ...p, mood: newMood, status: newStatus }));
         showMessage("…きょうは だれも こなかった");
+        if (USE_NEW_OBAKE) {
+          if (newStatus === "sad" && pet.status !== "sad") {
+            if (!sulkAnimShown) {
+              obakeRef.current?.sulk();
+              setSulkAnimShown(true);
+            } else {
+              obakeRef.current?.setState("sulk");
+            }
+          } else if (obakeRef.current?.getState() === "sleep") {
+            obakeRef.current?.setState("idle");
+          }
+        }
       } else {
         showMessage("あたらしい いちにちが はじまった！");
+        if (USE_NEW_OBAKE && obakeRef.current?.getState() === "sleep") {
+          obakeRef.current?.setState("idle");
+        }
       }
     } else {
       showMessage("あたらしい いちにちが はじまった！");
+      if (USE_NEW_OBAKE && obakeRef.current?.getState() === "sleep") {
+        obakeRef.current?.setState("idle");
+      }
     }
     setIsHoliday(false);
   };
 
   const triggerRunaway = () => {
-    setPet((p) => ({ ...p, status: "runaway", mood: 0 }));
-    showMessage("……いなくなっちゃった");
+    if (USE_NEW_OBAKE) {
+      obakeRef.current?.setState("sulk");
+      obakeRef.current?.iede();
+      setIedeAnimShown(true);
+    } else {
+      setPet((p) => ({ ...p, status: "runaway", mood: 0 }));
+      showMessage("……いなくなっちゃった");
+    }
   };
 
   const triggerReturn = () => {
     if (pet.status !== "runaway") return;
-    setPet((p) => ({ ...p, status: "sad", mood: 20 }));
-    const words = PET_WORDS[pet.natsuki_level] || PET_WORDS[1];
-    showMessage(words.reunion);
-    ghostApiRef.current?.triggerOhayou();
+    if (USE_NEW_OBAKE) {
+      obakeRef.current?.find();
+      setSulkAnimShown(false);
+      setIedeAnimShown(false);
+    } else {
+      setPet((p) => ({ ...p, status: "sad", mood: 20 }));
+      const words = PET_WORDS[pet.natsuki_level] || PET_WORDS[1];
+      showMessage(words.reunion);
+      ghostApiRef.current?.triggerOhayou();
+    }
   };
 
   const skipLevel = () => {
@@ -216,7 +319,11 @@ export default function DemoPage() {
       natsuki_points: nextPoints,
     }));
     showMessage(`♪ なつきレベルが ${nextLevel} になった！`, 3500);
-    ghostApiRef.current?.triggerOhayou();
+    if (USE_NEW_OBAKE) {
+      obakeRef.current?.ohayo();
+    } else {
+      ghostApiRef.current?.triggerOhayou();
+    }
   };
 
   const resetAll = () => {
@@ -227,6 +334,77 @@ export default function DemoPage() {
     setIsHoliday(false);
     setOyasumiDone(false);
     showMessage("リセットしたよ！");
+    if (USE_NEW_OBAKE) {
+      obakeRef.current?.setState("idle");
+      setSulkAnimShown(false);
+      setIedeAnimShown(false);
+    }
+  };
+
+  // --- デモパネル A: 放置操作 ---
+  const demoSulk = () => {
+    if (pet.status === "runaway" || demoAnimating) return;
+    setPet((p) => ({ ...p, status: "sad", mood: 10 }));
+    if (!sulkAnimShown) {
+      setDemoAnimating(true);
+      obakeRef.current?.sulk();
+      setSulkAnimShown(true);
+    } else {
+      obakeRef.current?.setState("sulk");
+    }
+  };
+
+  const demoIede = () => {
+    if (pet.status === "runaway" || demoAnimating) return;
+    if (!iedeAnimShown) {
+      setDemoAnimating(true);
+      obakeRef.current?.setState("sulk");
+      obakeRef.current?.iede();
+      setIedeAnimShown(true);
+    } else {
+      obakeRef.current?.setState("gone");
+      setPet((p) => ({ ...p, status: "runaway", mood: 0 }));
+    }
+  };
+
+  const demoFind = () => {
+    if (pet.status !== "runaway" || demoAnimating) return;
+    setDemoAnimating(true);
+    obakeRef.current?.find();
+    setSulkAnimShown(false);
+    setIedeAnimShown(false);
+  };
+
+  const demoReset = () => {
+    setPet({ ...INITIAL_PET });
+    obakeRef.current?.setState("idle");
+    setSulkAnimShown(false);
+    setIedeAnimShown(false);
+    setDemoAnimating(false);
+    setPlayingMotion(null);
+    obakeRef.current?.release();
+    setHeldIds(new Set());
+  };
+
+  // --- デモパネル B: モーション ---
+  const demoPlayMotion = (name: ObakeMotion) => {
+    if (pet.status === "runaway" || demoAnimating) return;
+    const ok = obakeRef.current?.playDemo(name);
+    if (ok) {
+      setPlayingMotion(name);
+      setDemoAnimating(true);
+    }
+  };
+
+  // --- デモパネル C: パラメータ ---
+  const handleParamChange = (id: string, value: number) => {
+    obakeRef.current?.hold({ [id]: value });
+    setHeldIds((prev) => new Set(prev).add(id));
+  };
+
+  const releaseAllParams = () => {
+    obakeRef.current?.release();
+    setHeldIds(new Set());
   };
 
   const toggleHoliday = () => {
@@ -253,24 +431,29 @@ export default function DemoPage() {
     : 100;
   const moodEmoji = pet.mood >= 70 ? "◎" : pet.mood >= 40 ? "○" : "△";
 
+  const modelParams = PARAM_INFO.filter(p => p.group === "model");
+  const addedParams = PARAM_INFO.filter(p => p.group === "added");
+  const isGone = pet.status === "runaway";
+
   // --- ホーム画面（常時マウント） ---
   return (
     <>
-    {/* モーダル: 時間割 */}
     {screen === "timetable" && (
       <div className="fixed inset-0 z-50 bg-[#F5F4EE] overflow-y-auto">
         <Timetable onClose={() => setScreen("home")} />
       </div>
     )}
-    {/* モーダル: 日記 */}
     {screen === "diary" && (
       <div className="fixed inset-0 z-50 bg-[#F5F4EE] overflow-y-auto">
         <Diary entries={diaryEntries} onClose={() => setScreen("home")} />
       </div>
     )}
     <div className="min-h-screen bg-[#F5F4EE] flex flex-col items-center px-4 py-6">
+      <div className="w-full max-w-sm md:max-w-3xl md:flex md:gap-6 md:items-start">
+      {/* === 左カラム：アプリ本体 === */}
+      <div className="w-full max-w-sm flex flex-col items-center shrink-0">
       {/* ヘッダー */}
-      <div className="w-full max-w-sm flex justify-between items-center mb-4">
+      <div className="w-full flex justify-between items-center mb-4">
         <span className="font-mono text-lg tracking-wider text-gray-600">
           たんいぼうえいペット
         </span>
@@ -287,19 +470,14 @@ export default function DemoPage() {
       </div>
 
       {/* ペット画面 */}
-      <div className="w-full max-w-sm bg-[#C5CCA1] border-[6px] border-gray-500 rounded-2xl p-6 flex flex-col items-center relative shadow-lg">
-        {/* なつき度（おばけの上） */}
+      <div className="w-full bg-[#C5CCA1] border-[6px] border-gray-500 rounded-2xl p-6 flex flex-col items-center relative shadow-lg">
         <div className="flex flex-col items-center gap-1 mb-2">
           <span className="text-xs text-gray-600 font-mono">
             きぶん: {moodEmoji}　{pet.consecutive_days}日れんぞく　({dayCount}日目)
           </span>
           <div className="flex gap-1.5">
             {[1, 2, 3].map((i) => (
-              <svg
-                key={i}
-                viewBox="0 0 16 14"
-                className="w-4 h-3.5"
-              >
+              <svg key={i} viewBox="0 0 16 14" className="w-4 h-3.5">
                 <path
                   d="M8,3 C8,1 6.5,0 5,0 C3,0 1,1.5 1,4 C1,8 8,13 8,13 C8,13 15,8 15,4 C15,1.5 13,0 11,0 C9.5,0 8,1 8,3 Z"
                   fill={i <= pet.natsuki_level ? "#E24B4A" : "#D3D1C7"}
@@ -309,31 +487,57 @@ export default function DemoPage() {
           </div>
         </div>
 
-        <div className="w-44 h-44 relative overflow-hidden">
-          <Live2DGhost
-            status={pet.status}
-            mood={pet.mood}
-            natsukiLevel={pet.natsuki_level}
-            onModelReady={(api) => { ghostApiRef.current = api; }}
-          />
-          {/* 家出カバー */}
-          <div
-            className={`absolute inset-0 bg-[#C5CCA1] flex flex-col items-center justify-center transition-opacity duration-500 ${
-              pet.status === "runaway"
-                ? "opacity-100"
-                : "opacity-0 pointer-events-none"
-            }`}
-          >
-            <p className="font-mono text-sm text-gray-400">……いない</p>
-            <div className="flex gap-2 mt-2 opacity-30">
-              <div className="w-1.5 h-1.5 rounded-full bg-gray-300" />
-              <div className="w-1 h-1 rounded-full bg-gray-300 mt-1" />
-              <div className="w-1 h-1 rounded-full bg-gray-200 mt-0.5" />
+        {USE_NEW_OBAKE ? (
+          <div className="w-full aspect-[642/472] relative">
+            <ObakePet
+              ref={obakeRef}
+              preset={OBAKE_PRESET_LARGE}
+              initialState={mountObakeState}
+              bubble={false}
+              onSay={(text, dur) => showMessage(text, dur * 1000)}
+              onReady={() => {
+                if (pet.status === "sad" && !sulkAnimShown) {
+                  obakeRef.current?.sulk();
+                  setSulkAnimShown(true);
+                } else if (pet.status === "runaway" && !iedeAnimShown) {
+                  obakeRef.current?.iede();
+                  setIedeAnimShown(true);
+                }
+              }}
+              onStateChange={(s) => {
+                setObakeDisplayState(OBAKE_STATE_LABELS[s] || s);
+                if (s === "gone") {
+                  setPet((p) => ({ ...p, status: "runaway", mood: 0 }));
+                } else if (s === "idle" && pet.status === "runaway") {
+                  setPet((p) => ({ ...p, status: "normal", mood: 20 }));
+                }
+              }}
+              onMotionEnd={() => { setDemoAnimating(false); setPlayingMotion(null); }}
+            />
+          </div>
+        ) : (
+          <div className="w-44 h-44 relative overflow-hidden">
+            <Live2DGhost
+              status={pet.status}
+              mood={pet.mood}
+              natsukiLevel={pet.natsuki_level}
+              onModelReady={(api) => { ghostApiRef.current = api; }}
+            />
+            <div
+              className={`absolute inset-0 bg-[#C5CCA1] flex flex-col items-center justify-center transition-opacity duration-500 ${
+                pet.status === "runaway" ? "opacity-100" : "opacity-0 pointer-events-none"
+              }`}
+            >
+              <p className="font-mono text-sm text-gray-400">……いない</p>
+              <div className="flex gap-2 mt-2 opacity-30">
+                <div className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                <div className="w-1 h-1 rounded-full bg-gray-300 mt-1" />
+                <div className="w-1 h-1 rounded-full bg-gray-200 mt-0.5" />
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* ふきだし（下部中央） */}
         {message && (
           <div className="mt-2 bg-white border-2 border-gray-500 rounded-xl px-3 py-1.5 text-sm font-mono text-gray-700 animate-fade-in max-w-[240px] text-center">
             {message}
@@ -342,7 +546,7 @@ export default function DemoPage() {
       </div>
 
       {/* お世話ボタン */}
-      {pet.status !== "runaway" && !isHoliday && (
+      {!isGone && !isHoliday && (
         <div className="flex gap-2 mt-5">
           {[
             { type: "ohayou", label: "☀️ おはよう" },
@@ -353,15 +557,11 @@ export default function DemoPage() {
               key={type}
               onClick={() => doCare(type)}
               disabled={todayCare[type]}
-              className={`
-                px-3 py-2.5 rounded-full border-2 font-mono text-sm whitespace-nowrap transition-all duration-200
-                ${
-                  todayCare[type]
-                    ? "border-green-300 bg-green-50 text-green-600"
-                    : "border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm active:translate-y-0.5"
-                }
-                disabled:cursor-default
-              `}
+              className={`px-3 py-2.5 rounded-full border-2 font-mono text-sm whitespace-nowrap transition-all duration-200 ${
+                todayCare[type]
+                  ? "border-green-300 bg-green-50 text-green-600"
+                  : "border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm active:translate-y-0.5"
+              } disabled:cursor-default`}
             >
               {label}
             </button>
@@ -369,15 +569,11 @@ export default function DemoPage() {
         </div>
       )}
 
-      {/* 休日メッセージ */}
-      {isHoliday && pet.status !== "runaway" && (
-        <p className="mt-5 font-mono text-sm text-gray-400">
-          きょうは おやすみ。のんびりしよう。
-        </p>
+      {isHoliday && !isGone && (
+        <p className="mt-5 font-mono text-sm text-gray-400">きょうは おやすみ。のんびりしよう。</p>
       )}
 
-      {/* 家出中の帰還ボタン */}
-      {pet.status === "runaway" && (
+      {isGone && (
         <button
           onClick={triggerReturn}
           className="mt-5 px-5 py-2.5 rounded-full border-2 border-dashed border-gray-400 bg-white text-gray-500 font-mono text-sm hover:border-gray-500 transition-all duration-200 active:translate-y-0.5"
@@ -386,8 +582,23 @@ export default function DemoPage() {
         </button>
       )}
 
+      {/* 遊び方の説明 */}
+      <div className="w-full mt-4 bg-gray-100 rounded-xl px-3 py-2.5 font-mono text-[11px] text-gray-500 leading-relaxed">
+        <span className="inline sm:hidden">
+          <b>なでる</b>：あたまをこすこす<br />
+          <b>つつく</b>：からだをタップ<br />
+          <b>くすぐる</b>：すそをタップ<br />
+          <b>てをタップ</b>：タップした手をふる<br />
+        </span>
+        <span className="hidden sm:inline">
+          <b>なでる</b>：あたまをこすこす　<b>つつく</b>：からだをタップ<br />
+          <b>くすぐる</b>：すそをタップ　<b>てをタップ</b>：タップした手をふる<br />
+        </span>
+        すねたら「おはよう」で仲直り。いえでしたら、だいがくへ行くと見つかります。
+      </div>
+
       {/* なつきプログレスバー */}
-      <div className="w-full max-w-sm mt-6">
+      <div className="w-full mt-6">
         <div className="flex justify-between text-xs text-gray-400 font-mono mb-1">
           <span>なつき Lv.{pet.natsuki_level}</span>
           <span>
@@ -402,20 +613,22 @@ export default function DemoPage() {
             style={{
               width: `${progressPercent}%`,
               backgroundColor:
-                pet.natsuki_level >= 3
-                  ? "#7F77DD"
-                  : pet.natsuki_level >= 2
-                  ? "#5DCAA5"
-                  : "#85B7EB",
+                pet.natsuki_level >= 3 ? "#7F77DD" : pet.natsuki_level >= 2 ? "#5DCAA5" : "#85B7EB",
             }}
           />
         </div>
       </div>
 
-      {/* ナビゲーション（本番と同じUI） */}
-      <div className="w-full max-w-sm mt-6 flex gap-3">
+      {/* ナビゲーション */}
+      <div className="w-full mt-6 flex gap-3">
         <button
-          onClick={() => { setScreen("timetable"); setOyasumiDone(false); }}
+          onClick={() => {
+            setScreen("timetable");
+            setOyasumiDone(false);
+            if (USE_NEW_OBAKE && obakeRef.current?.getState() === "sleep") {
+              obakeRef.current?.setState("idle");
+            }
+          }}
           className={`flex-1 py-3 rounded-2xl border-2 font-mono text-sm transition active:translate-y-0.5 ${
             oyasumiDone
               ? "border-orange-300 bg-orange-50 text-orange-600 animate-pulse hover:border-orange-400"
@@ -426,10 +639,7 @@ export default function DemoPage() {
         </button>
         <button
           onClick={() => {
-            if (!isHoliday) {
-              showMessage("にっきは おやすみの ひに みれるよ");
-              return;
-            }
+            if (!isHoliday) { showMessage("にっきは おやすみの ひに みれるよ"); return; }
             setScreen("diary");
           }}
           className={`flex-1 py-3 rounded-2xl border-2 font-mono text-sm transition active:translate-y-0.5 ${
@@ -442,74 +652,150 @@ export default function DemoPage() {
         </button>
       </div>
 
-      {/* デモ操作パネル */}
-      <div className="w-full max-w-sm mt-8">
-        <button
-          onClick={() => setShowPanel(!showPanel)}
-          className="w-full text-left font-mono text-xs text-gray-400 hover:text-gray-500 transition mb-2"
-        >
-          {showPanel ? "▼" : "▶"} デモ操作パネル
-        </button>
+      <p className="mt-4 text-xs text-gray-300 font-mono text-center">
+        データはブラウザのメモリ上のみ（リロードで初期化）
+      </p>
 
-        {showPanel && (
-          <div className="bg-white border-2 border-dashed border-gray-300 rounded-2xl p-4 flex flex-col gap-3">
-            <p className="font-mono text-xs text-gray-400">
-              ※ デモ用の操作ボタンです（本番版にはありません）
-            </p>
+      </div>{/* /左カラム */}
 
-            <div className="flex flex-wrap gap-2">
+      {/* === 右カラム：デモ操作パネル === */}
+      {SHOW_DEMO_PANEL && (
+      <div className="w-full max-w-sm mt-6 md:mt-0 flex flex-col gap-4">
+
+        {/* A: 放置の操作 */}
+        <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
+          <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">デモ用</span>
+          <p className="font-mono text-sm text-gray-600 mb-0.5">デモ操作パネル</p>
+          <p className="font-mono text-[11px] text-gray-400 mb-3">時間を進めて、放置したときの様子を試せます</p>
+          <div className="flex gap-2">
+            <button onClick={demoSulk} disabled={isGone || demoAnimating}
+              className="flex-1 py-2.5 rounded-2xl border-2 font-mono transition active:translate-y-0.5 border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm disabled:opacity-40 disabled:pointer-events-none">
+              <span className="block text-sm">1日ほうち</span>
+              <span className="block text-[10px] text-gray-400">すねる</span>
+            </button>
+            <button onClick={demoIede} disabled={isGone || demoAnimating}
+              className="flex-1 py-2.5 rounded-2xl border-2 font-mono transition active:translate-y-0.5 border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm disabled:opacity-40 disabled:pointer-events-none">
+              <span className="block text-sm">3日ほうち</span>
+              <span className="block text-[10px] text-gray-400">いえで</span>
+            </button>
+            <button onClick={demoFind} disabled={!isGone || demoAnimating}
+              className="flex-1 py-2.5 rounded-2xl border-2 font-mono transition active:translate-y-0.5 border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm disabled:opacity-40 disabled:pointer-events-none">
+              <span className="block text-sm">だいがくへ</span>
+              <span className="block text-[10px] text-gray-400">みつける</span>
+            </button>
+          </div>
+          <div className="flex items-end justify-between mt-3">
+            <p className="font-mono text-[11px] text-gray-400">いまの状態：{obakeDisplayState}</p>
+            <button onClick={demoReset} className="font-mono text-[11px] text-gray-400 hover:text-gray-600 transition underline">はじめにもどす</button>
+          </div>
+        </div>
+
+        {/* B: モーション */}
+        <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
+          <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">デモ用</span>
+          <p className="font-mono text-sm text-gray-600 mb-2">モーション</p>
+          <div className="flex flex-wrap gap-1.5">
+            {MOTION_INFO.map(({ name, label }) => (
               <button
-                onClick={advanceDay}
-                className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5"
+                key={name}
+                onClick={() => demoPlayMotion(name)}
+                disabled={isGone || demoAnimating}
+                className={`px-2.5 py-1 rounded-full border font-mono text-xs transition active:translate-y-0.5 ${
+                  playingMotion === name
+                    ? "border-gray-600 bg-gray-600 text-white"
+                    : "border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100"
+                } disabled:opacity-40 disabled:pointer-events-none`}
               >
-                📅 つぎの日へ
+                {label}
               </button>
-              <button
-                onClick={toggleHoliday}
-                className={`px-3 py-1.5 rounded-full border font-mono text-xs transition active:translate-y-0.5 ${
-                  isHoliday
-                    ? "border-blue-400 bg-blue-100 text-blue-600"
-                    : "border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100"
-                }`}
-              >
-                {isHoliday ? "🔵 へいじつに もどす" : "🏖️ きゅうじつに してみる"}
-              </button>
-              <button
-                onClick={skipLevel}
-                className="px-3 py-1.5 rounded-full border border-green-300 bg-green-50 text-green-600 font-mono text-xs hover:bg-green-100 transition active:translate-y-0.5"
-              >
-                ⬆ レベルスキップ
-              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* C: パラメータ */}
+        <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
+          <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">デモ用</span>
+          <button
+            onClick={() => setShowParams(!showParams)}
+            className="w-full text-left font-mono text-sm text-gray-600 hover:text-gray-800 transition"
+          >
+            {showParams ? "▼" : "▶"} パラメータを{showParams ? "隠す" : "表示"}
+          </button>
+
+          {showParams && (
+            <div className="mt-3 space-y-4">
+              {[
+                { title: "モデルのパラメータ", items: modelParams },
+                { title: "追加したパラメータ", items: addedParams },
+              ].map(({ title, items }) => (
+                <div key={title}>
+                  <p className="font-mono text-[11px] text-gray-400 mb-1.5">{title}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                    {items.map((p) => {
+                      const isHeld = heldIds.has(p.id);
+                      const val = paramValues[p.id] ?? p.def;
+                      const step = (p.max - p.min) / 200;
+                      return (
+                        <div key={p.id} className="flex items-center gap-1.5 min-w-0">
+                          <span className={`font-mono text-[11px] whitespace-nowrap shrink-0 ${isHeld ? "text-orange-500" : "text-gray-500"}`}>
+                            {p.label}
+                            {p.note && <span className="text-[9px] text-gray-400 ml-0.5">({p.note})</span>}
+                          </span>
+                          <input
+                            type="range"
+                            min={p.min}
+                            max={p.max}
+                            step={step}
+                            value={isHeld ? (obakeRef.current?.getHeld()[p.id] ?? val) : val}
+                            onChange={(e) => handleParamChange(p.id, Number(e.target.value))}
+                            className="flex-1 min-w-0 h-1 accent-gray-500"
+                          />
+                          <span className="font-mono text-[10px] text-gray-400 w-8 text-right shrink-0">
+                            {val.toFixed(1)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              <div>
+                <button
+                  onClick={releaseAllParams}
+                  className="px-3 py-1 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5"
+                >
+                  動かした値をもどす
+                </button>
+                <p className="font-mono text-[10px] text-gray-400 mt-1">
+                  スライダーを動かすと、その値で固定されます（オレンジ表示）。
+                </p>
+              </div>
             </div>
+          )}
+        </div>
 
+        {/* 開発パネル */}
+        <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
+          <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">開発用</span>
+          <div className="flex flex-col gap-3">
             <div className="flex flex-wrap gap-2">
-              <button
-                onClick={triggerRunaway}
-                className="px-3 py-1.5 rounded-full border border-red-300 bg-red-50 text-red-600 font-mono text-xs hover:bg-red-100 transition active:translate-y-0.5"
-              >
-                🏃 もし いえでしちゃったら……
-              </button>
-              <button
-                onClick={resetAll}
-                className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5"
-              >
-                🔄 リセット
-              </button>
+              <button onClick={advanceDay} className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5">📅 つぎの日へ</button>
+              <button onClick={toggleHoliday} className={`px-3 py-1.5 rounded-full border font-mono text-xs transition active:translate-y-0.5 ${isHoliday ? "border-blue-400 bg-blue-100 text-blue-600" : "border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100"}`}>{isHoliday ? "🔵 へいじつに もどす" : "🏖️ きゅうじつに してみる"}</button>
+              <button onClick={skipLevel} className="px-3 py-1.5 rounded-full border border-green-300 bg-green-50 text-green-600 font-mono text-xs hover:bg-green-100 transition active:translate-y-0.5">⬆ レベルスキップ</button>
+              <button onClick={resetAll} className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5">🔄 リセット</button>
             </div>
-
-            <div className="mt-1 font-mono text-xs text-gray-400 space-y-0.5">
+            <div className="font-mono text-xs text-gray-400 space-y-0.5">
               <p>なつきpt: {pet.natsuki_points} / Lv.{pet.natsuki_level}</p>
               <p>mood: {pet.mood} / status: {pet.status}</p>
               <p>にっき: {diaryEntries.length}けん</p>
             </div>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* フッター */}
-      <p className="mt-8 text-xs text-gray-300 font-mono text-center">
-        データはブラウザのメモリ上のみ（リロードで初期化）
-      </p>
+      </div>
+      )}
+
+      </div>{/* /2カラムコンテナ */}
     </div>
     </>
   );

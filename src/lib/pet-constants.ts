@@ -48,6 +48,13 @@ export function getNatsukiLevel(points: number): number {
   return 1;
 }
 
+/** appStage を約 1.16 倍に拡大した表示範囲 */
+export const OBAKE_PRESET_LARGE = {
+  viewBox: '-2297 -1840 4593 3377',
+  corner: { x: -1737, y: 700, sc: 0.52 },
+  exitX: 2997,
+} as const;
+
 export type PetStatus = "normal" | "sad" | "distant" | "runaway";
 
 export interface PetState {

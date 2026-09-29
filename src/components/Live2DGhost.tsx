@@ -84,6 +84,11 @@ function waitForCubismCore(timeout = 10000): Promise<void> {
       resolve();
       return;
     }
+    // layout.tsx の Script を削除したので、自前でロードする
+    const s = document.createElement("script");
+    s.src = "/live2d/live2dcubismcore.min.js";
+    s.async = true;
+    document.head.appendChild(s);
     const start = Date.now();
     const check = setInterval(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
