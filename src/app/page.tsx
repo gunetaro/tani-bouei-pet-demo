@@ -443,9 +443,9 @@ export default function DemoPage() {
 
   const demoPanelA = (
     <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
-      <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">デモ用</span>
-      <p className="font-mono text-sm text-gray-600 mb-0.5">デモ操作パネル</p>
-      <p className="font-mono text-[11px] text-gray-400 mb-3">時間を進めて、放置したときの様子を試せます</p>
+      <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono hidden lg:inline">デモ用</span>
+      <p className="font-mono text-sm text-gray-600 mb-0.5 hidden lg:block">デモ操作パネル</p>
+      <p className="font-mono text-[11px] text-gray-400 mb-3 hidden lg:block">時間を進めて、放置したときの様子を試せます</p>
       <div className="flex gap-2">
         <button onClick={demoSulk} disabled={isGone || demoAnimating}
           className="flex-1 py-2.5 rounded-2xl border-2 font-mono transition active:translate-y-0.5 border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm disabled:opacity-40 disabled:pointer-events-none">
