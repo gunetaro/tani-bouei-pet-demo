@@ -422,6 +422,25 @@ export default function DemoPage() {
   const isGone = pet.status === "runaway";
 
   // --- ホーム画面（常時マウント） ---
+  const demoPanelDev = (
+    <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
+      <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">デモ用</span>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-2">
+          <button onClick={advanceDay} className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5">📅 つぎの日へ</button>
+          <button onClick={toggleHoliday} className={`px-3 py-1.5 rounded-full border font-mono text-xs transition active:translate-y-0.5 ${isHoliday ? "border-blue-400 bg-blue-100 text-blue-600" : "border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100"}`}>{isHoliday ? "🔵 へいじつに もどす" : "🏖️ きゅうじつに してみる"}</button>
+          <button onClick={skipLevel} className="px-3 py-1.5 rounded-full border border-green-300 bg-green-50 text-green-600 font-mono text-xs hover:bg-green-100 transition active:translate-y-0.5">⬆ レベルスキップ</button>
+          <button onClick={resetAll} className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5">🔄 リセット</button>
+        </div>
+        <div className="font-mono text-xs text-gray-400 space-y-0.5">
+          <p>なつきpt: {pet.natsuki_points} / Lv.{pet.natsuki_level}</p>
+          <p>mood: {pet.mood} / status: {pet.status}</p>
+          <p>にっき: {diaryEntries.length}けん</p>
+        </div>
+      </div>
+    </div>
+  );
+
   const demoPanelA = (
     <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
       <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">デモ用</span>
@@ -597,23 +616,8 @@ export default function DemoPage() {
         </button>
       )}
 
-      {/* 遊び方の説明 */}
-      <div className="w-full mt-4 bg-gray-100 rounded-xl px-3 py-2.5 font-mono text-[11px] text-gray-500 leading-relaxed">
-        <span className="inline sm:hidden">
-          <b>なでる</b>：あたまをこすこす<br />
-          <b>つつく</b>：からだをタップ<br />
-          <b>くすぐる</b>：すそをタップ<br />
-          <b>てをタップ</b>：タップした手をふる<br />
-        </span>
-        <span className="hidden sm:inline">
-          <b>なでる</b>：あたまをこすこす　<b>つつく</b>：からだをタップ<br />
-          <b>くすぐる</b>：すそをタップ　<b>てをタップ</b>：タップした手をふる<br />
-        </span>
-        すねたら「おはよう」で仲直り。いえでしたら、だいがくへ行くと見つかります。
-      </div>
-
-      {/* なつきプログレスバー */}
-      <div className="w-full mt-6">
+      {/* なつきプログレスバー（PCのみ） */}
+      <div className="w-full mt-6 hidden lg:block">
         <div className="flex justify-between text-xs text-gray-400 font-mono mb-1">
           <span>なつき Lv.{pet.natsuki_level}</span>
           <span>
@@ -667,10 +671,28 @@ export default function DemoPage() {
         </button>
       </div>
 
-      {/* モバイル用：デモ操作パネルA（PCでは左カラムに表示） */}
+      {/* モバイル用：デモ操作パネル（PCでは左カラムに表示） */}
       {SHOW_DEMO_PANEL && (
-        <div className="w-full mt-5 lg:hidden">{demoPanelA}</div>
+        <div className="w-full mt-5 lg:hidden flex flex-col gap-4">
+          {demoPanelA}
+          {demoPanelDev}
+        </div>
       )}
+
+      {/* 遊び方の説明 */}
+      <div className="w-full mt-4 bg-gray-100 rounded-xl px-3 py-2.5 font-mono text-[11px] text-gray-500 leading-relaxed">
+        <span className="inline sm:hidden">
+          <b>なでる</b>：あたまをこすこす<br />
+          <b>つつく</b>：からだをタップ<br />
+          <b>くすぐる</b>：すそをタップ<br />
+          <b>てをタップ</b>：タップした手をふる<br />
+        </span>
+        <span className="hidden sm:inline">
+          <b>なでる</b>：あたまをこすこす　<b>つつく</b>：からだをタップ<br />
+          <b>くすぐる</b>：すそをタップ　<b>てをタップ</b>：タップした手をふる<br />
+        </span>
+        すねたら「おはよう」で仲直り。いえでしたら、だいがくへ行くと見つかります。
+      </div>
 
       <p className="mt-4 text-xs text-gray-300 font-mono text-center">
         データはブラウザのメモリ上のみ（リロードで初期化）
@@ -707,23 +729,8 @@ export default function DemoPage() {
           </div>
         </div>
 
-        {/* つぎの日へ等 */}
-        <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
-          <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">デモ用</span>
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap gap-2">
-              <button onClick={advanceDay} className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5">📅 つぎの日へ</button>
-              <button onClick={toggleHoliday} className={`px-3 py-1.5 rounded-full border font-mono text-xs transition active:translate-y-0.5 ${isHoliday ? "border-blue-400 bg-blue-100 text-blue-600" : "border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100"}`}>{isHoliday ? "🔵 へいじつに もどす" : "🏖️ きゅうじつに してみる"}</button>
-              <button onClick={skipLevel} className="px-3 py-1.5 rounded-full border border-green-300 bg-green-50 text-green-600 font-mono text-xs hover:bg-green-100 transition active:translate-y-0.5">⬆ レベルスキップ</button>
-              <button onClick={resetAll} className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5">🔄 リセット</button>
-            </div>
-            <div className="font-mono text-xs text-gray-400 space-y-0.5">
-              <p>なつきpt: {pet.natsuki_points} / Lv.{pet.natsuki_level}</p>
-              <p>mood: {pet.mood} / status: {pet.status}</p>
-              <p>にっき: {diaryEntries.length}けん</p>
-            </div>
-          </div>
-        </div>
+        {/* つぎの日へ等（PC用） */}
+        {demoPanelDev}
 
       </div>
       )}
