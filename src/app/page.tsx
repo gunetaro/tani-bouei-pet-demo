@@ -119,7 +119,6 @@ export default function DemoPage() {
 
   // デモパネル C: パラメータ
   const [showParams, setShowParams] = useState(false);
-  const [heldIds, setHeldIds] = useState<Set<string>>(new Set());
   const [paramValues, setParamValues] = useState<Record<string, number>>({});
 
   // パラメータの PARAM_INFO / MOTION_INFO（動的 import で取得）
@@ -382,8 +381,6 @@ export default function DemoPage() {
     setIedeAnimShown(false);
     setDemoAnimating(false);
     setPlayingMotion(null);
-    obakeRef.current?.release();
-    setHeldIds(new Set());
   };
 
   // --- デモパネル B: モーション ---
@@ -394,17 +391,6 @@ export default function DemoPage() {
       setPlayingMotion(name);
       setDemoAnimating(true);
     }
-  };
-
-  // --- デモパネル C: パラメータ ---
-  const handleParamChange = (id: string, value: number) => {
-    obakeRef.current?.hold({ [id]: value });
-    setHeldIds((prev) => new Set(prev).add(id));
-  };
-
-  const releaseAllParams = () => {
-    obakeRef.current?.release();
-    setHeldIds(new Set());
   };
 
   const toggleHoliday = () => {
@@ -436,6 +422,35 @@ export default function DemoPage() {
   const isGone = pet.status === "runaway";
 
   // --- ホーム画面（常時マウント） ---
+  const demoPanelA = (
+    <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
+      <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">デモ用</span>
+      <p className="font-mono text-sm text-gray-600 mb-0.5">デモ操作パネル</p>
+      <p className="font-mono text-[11px] text-gray-400 mb-3">時間を進めて、放置したときの様子を試せます</p>
+      <div className="flex gap-2">
+        <button onClick={demoSulk} disabled={isGone || demoAnimating}
+          className="flex-1 py-2.5 rounded-2xl border-2 font-mono transition active:translate-y-0.5 border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm disabled:opacity-40 disabled:pointer-events-none">
+          <span className="block text-sm">1日ほうち</span>
+          <span className="block text-[10px] text-gray-400">すねる</span>
+        </button>
+        <button onClick={demoIede} disabled={isGone || demoAnimating}
+          className="flex-1 py-2.5 rounded-2xl border-2 font-mono transition active:translate-y-0.5 border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm disabled:opacity-40 disabled:pointer-events-none">
+          <span className="block text-sm">3日ほうち</span>
+          <span className="block text-[10px] text-gray-400">いえで</span>
+        </button>
+        <button onClick={demoFind} disabled={!isGone || demoAnimating}
+          className="flex-1 py-2.5 rounded-2xl border-2 font-mono transition active:translate-y-0.5 border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm disabled:opacity-40 disabled:pointer-events-none">
+          <span className="block text-sm">だいがくへ</span>
+          <span className="block text-[10px] text-gray-400">みつける</span>
+        </button>
+      </div>
+      <div className="flex items-end justify-between mt-3">
+        <p className="font-mono text-[11px] text-gray-400">いまの状態：{obakeDisplayState}</p>
+        <button onClick={demoReset} className="font-mono text-[11px] text-gray-400 hover:text-gray-600 transition underline">はじめにもどす</button>
+      </div>
+    </div>
+  );
+
   return (
     <>
     {screen === "timetable" && (
@@ -449,9 +464,9 @@ export default function DemoPage() {
       </div>
     )}
     <div className="min-h-screen bg-[#F5F4EE] flex flex-col items-center px-4 py-6">
-      <div className="w-full max-w-sm md:max-w-3xl md:flex md:gap-6 md:items-start">
-      {/* === 左カラム：アプリ本体 === */}
-      <div className="w-full max-w-sm flex flex-col items-center shrink-0">
+      <div className="w-full max-w-sm lg:max-w-6xl lg:flex lg:gap-5 lg:items-start lg:justify-center">
+      {/* === 中央カラム：アプリ本体（モバイルでは最初、PCでは真ん中） === */}
+      <div className="w-full max-w-sm flex flex-col items-center shrink-0 lg:order-2">
       {/* ヘッダー */}
       <div className="w-full flex justify-between items-center mb-4">
         <span className="font-mono text-lg tracking-wider text-gray-600">
@@ -652,43 +667,23 @@ export default function DemoPage() {
         </button>
       </div>
 
+      {/* モバイル用：デモ操作パネルA（PCでは左カラムに表示） */}
+      {SHOW_DEMO_PANEL && (
+        <div className="w-full mt-5 lg:hidden">{demoPanelA}</div>
+      )}
+
       <p className="mt-4 text-xs text-gray-300 font-mono text-center">
         データはブラウザのメモリ上のみ（リロードで初期化）
       </p>
 
-      </div>{/* /左カラム */}
+      </div>{/* /中央カラム */}
 
-      {/* === 右カラム：デモ操作パネル === */}
+      {/* === 左カラム：デモ操作パネル（モバイルでは中央の下、PCでは左） === */}
       {SHOW_DEMO_PANEL && (
-      <div className="w-full max-w-sm mt-6 md:mt-0 flex flex-col gap-4">
+      <div className="hidden lg:flex w-full max-w-xs mt-0 flex-col gap-4 lg:order-1">
 
-        {/* A: 放置の操作 */}
-        <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
-          <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">デモ用</span>
-          <p className="font-mono text-sm text-gray-600 mb-0.5">デモ操作パネル</p>
-          <p className="font-mono text-[11px] text-gray-400 mb-3">時間を進めて、放置したときの様子を試せます</p>
-          <div className="flex gap-2">
-            <button onClick={demoSulk} disabled={isGone || demoAnimating}
-              className="flex-1 py-2.5 rounded-2xl border-2 font-mono transition active:translate-y-0.5 border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm disabled:opacity-40 disabled:pointer-events-none">
-              <span className="block text-sm">1日ほうち</span>
-              <span className="block text-[10px] text-gray-400">すねる</span>
-            </button>
-            <button onClick={demoIede} disabled={isGone || demoAnimating}
-              className="flex-1 py-2.5 rounded-2xl border-2 font-mono transition active:translate-y-0.5 border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm disabled:opacity-40 disabled:pointer-events-none">
-              <span className="block text-sm">3日ほうち</span>
-              <span className="block text-[10px] text-gray-400">いえで</span>
-            </button>
-            <button onClick={demoFind} disabled={!isGone || demoAnimating}
-              className="flex-1 py-2.5 rounded-2xl border-2 font-mono transition active:translate-y-0.5 border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:shadow-sm disabled:opacity-40 disabled:pointer-events-none">
-              <span className="block text-sm">だいがくへ</span>
-              <span className="block text-[10px] text-gray-400">みつける</span>
-            </button>
-          </div>
-          <div className="flex items-end justify-between mt-3">
-            <p className="font-mono text-[11px] text-gray-400">いまの状態：{obakeDisplayState}</p>
-            <button onClick={demoReset} className="font-mono text-[11px] text-gray-400 hover:text-gray-600 transition underline">はじめにもどす</button>
-          </div>
-        </div>
+        {/* A: 放置の操作（PC用） */}
+        {demoPanelA}
 
         {/* B: モーション */}
         <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
@@ -712,71 +707,9 @@ export default function DemoPage() {
           </div>
         </div>
 
-        {/* C: パラメータ */}
+        {/* つぎの日へ等 */}
         <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
           <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">デモ用</span>
-          <button
-            onClick={() => setShowParams(!showParams)}
-            className="w-full text-left font-mono text-sm text-gray-600 hover:text-gray-800 transition"
-          >
-            {showParams ? "▼" : "▶"} パラメータを{showParams ? "隠す" : "表示"}
-          </button>
-
-          {showParams && (
-            <div className="mt-3 space-y-4">
-              {[
-                { title: "モデルのパラメータ", items: modelParams },
-                { title: "追加したパラメータ", items: addedParams },
-              ].map(({ title, items }) => (
-                <div key={title}>
-                  <p className="font-mono text-[11px] text-gray-400 mb-1.5">{title}</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
-                    {items.map((p) => {
-                      const isHeld = heldIds.has(p.id);
-                      const val = paramValues[p.id] ?? p.def;
-                      const step = (p.max - p.min) / 200;
-                      return (
-                        <div key={p.id} className="flex items-center gap-1.5 min-w-0">
-                          <span className={`font-mono text-[11px] whitespace-nowrap shrink-0 ${isHeld ? "text-orange-500" : "text-gray-500"}`}>
-                            {p.label}
-                            {p.note && <span className="text-[9px] text-gray-400 ml-0.5">({p.note})</span>}
-                          </span>
-                          <input
-                            type="range"
-                            min={p.min}
-                            max={p.max}
-                            step={step}
-                            value={isHeld ? (obakeRef.current?.getHeld()[p.id] ?? val) : val}
-                            onChange={(e) => handleParamChange(p.id, Number(e.target.value))}
-                            className="flex-1 min-w-0 h-1 accent-gray-500"
-                          />
-                          <span className="font-mono text-[10px] text-gray-400 w-8 text-right shrink-0">
-                            {val.toFixed(1)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-              <div>
-                <button
-                  onClick={releaseAllParams}
-                  className="px-3 py-1 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5"
-                >
-                  動かした値をもどす
-                </button>
-                <p className="font-mono text-[10px] text-gray-400 mt-1">
-                  スライダーを動かすと、その値で固定されます（オレンジ表示）。
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 開発パネル */}
-        <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
-          <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">開発用</span>
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap gap-2">
               <button onClick={advanceDay} className="px-3 py-1.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600 font-mono text-xs hover:bg-gray-100 transition active:translate-y-0.5">📅 つぎの日へ</button>
@@ -795,7 +728,66 @@ export default function DemoPage() {
       </div>
       )}
 
-      </div>{/* /2カラムコンテナ */}
+      {/* === 右カラム：パラメータ（モバイルでは一番下、PCでは右） === */}
+      {SHOW_DEMO_PANEL && (
+      <div className="w-full max-w-sm lg:max-w-xs mt-6 lg:mt-0 lg:order-3">
+        <div className="@container border-2 border-dashed border-gray-300 rounded-2xl bg-white p-4 relative">
+          <span className="absolute -top-2.5 right-3 bg-white px-1.5 text-[10px] text-gray-400 font-mono">開発用</span>
+          <button
+            onClick={() => setShowParams(!showParams)}
+            className="w-full text-left font-mono text-sm text-gray-600 hover:text-gray-800 transition"
+          >
+            {showParams ? "▼" : "▶"} パラメータを{showParams ? "隠す" : "表示"}
+          </button>
+
+          {showParams && (
+            <div className="mt-3 space-y-4">
+              {[
+                { title: "モデルのパラメータ", items: modelParams },
+                { title: "追加したパラメータ", items: addedParams },
+              ].map(({ title, items }) => (
+                <div key={title}>
+                  <p className="font-mono text-[11px] text-gray-400 mb-1.5">{title}</p>
+                  <div className="grid grid-cols-1 gap-y-1.5">
+                    {items.map((p) => {
+                      const val = paramValues[p.id] ?? p.def;
+                      const step = (p.max - p.min) / 200;
+                      return (
+                        <div key={p.id} className="min-w-0">
+                          <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                            <span className="font-mono text-[11px] text-gray-500">
+                              {p.label}
+                              {p.note && <span className="text-[9px] text-gray-400 ml-1">({p.note})</span>}
+                            </span>
+                            <span className="font-mono text-[10px] text-gray-400 tabular-nums text-right shrink-0 w-10">
+                              {val.toFixed(1)}
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={p.min}
+                            max={p.max}
+                            step={step}
+                            value={val}
+                            readOnly
+                            className="w-full h-1.5 accent-gray-400 pointer-events-none"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              <p className="font-mono text-[10px] text-gray-400">
+                おばけの内部パラメータをリアルタイムで表示しています。
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+      )}
+
+      </div>{/* /3カラムコンテナ */}
     </div>
     </>
   );
