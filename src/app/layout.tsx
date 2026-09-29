@@ -7,8 +7,9 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  // Chrome などが hydration 前に html へ属性を追加する場合がある。
   return (
-    <html lang="ja">
+    <html lang="ja" suppressHydrationWarning>
       <head>
         <link
           href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap"
